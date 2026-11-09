@@ -314,7 +314,8 @@ function plainDescription(text) {
     .filter(function (line) { return !/^[-_=~*.─━—–\s]*$/.test(line) })
     .join("\n")
     .replace(/((?:code secret|code d['’]acc[eè]s|mot de passe|passcode|password)\s*:?\s*)\S+/gi, "$1••••••")
-    .replace(/([?&](?:p|pwd|passcode)=)[^\s&]+/gi, "$1••••••")
+    .replace(/(\bpin\b\s*:?\s*)\d[\d ]*#?/gi, "$1••••••")
+    .replace(/([?&](?:p|pwd|passcode|pin)=)[^\s&]+/gi, "$1••••••")
 }
 
 if (typeof module !== "undefined") {

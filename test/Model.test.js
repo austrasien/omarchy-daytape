@@ -115,6 +115,13 @@ test("the cursor follows the typing, skips empty texts and stays on the last", (
   assert.equal(M.cursorItem(M.typingPlan(["", ""]), 0), -1)
 })
 
+test("plainDescription masks phone PINs, not the word pin", () => {
+  assert.equal(M.plainDescription("PIN: 123456789#"), "PIN: ••••••")
+  assert.equal(M.plainDescription("Code PIN : 123 456 789#\nsuite"), "Code PIN : ••••••\nsuite")
+  assert.equal(M.plainDescription("https://tel.meet/abc?pin=12345&hs=7"), "https://tel.meet/abc?pin=••••••&hs=7")
+  assert.equal(M.plainDescription("Pin the document"), "Pin the document")
+})
+
 test("targetLabel ranks the events not over yet", () => {
   const blocks = [{ event: span(10, 20) }, { event: span(30, 40) }, { event: span(50, 60) }]
   const now = day + 35 * MIN
