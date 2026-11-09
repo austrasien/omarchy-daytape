@@ -152,6 +152,23 @@ function nextWake(nowMs, events, imminentMs) {
   return Math.max(250, next - nowMs + 20)
 }
 
+// Where each block's warning tag starts on its cosine sweep, by block index.
+// Among the imminent blocks, the first starts at the top of its block, the
+// second at the bottom, and the others evenly between the two.
+function sweepPhases(blocks, nowMs, imminentMs) {
+  var phases = (blocks || []).map(function () { return 0 })
+  var imminent = []
+  phases.forEach(function (_, i) {
+    var start = blocks[i].event.start
+    if (start > nowMs && start - nowMs <= imminentMs) imminent.push(i)
+  })
+  imminent.forEach(function (index, k) {
+    var height = k === 0 ? 0 : k === 1 ? 1 : (k - 1) / (imminent.length - 1)
+    phases[index] = Math.acos(1 - 2 * height) / Math.PI
+  })
+  return phases
+}
+
 function decodeEntities(text) {
   var named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " }
   return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, function (whole, code) {
@@ -182,6 +199,6 @@ function plainDescription(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     normalizeConfig: normalizeConfig, midnight: midnight, comingToday: comingToday, span: span,
-    hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, plainDescription: plainDescription
+    hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription
   }
 }

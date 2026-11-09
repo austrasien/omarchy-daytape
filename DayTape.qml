@@ -193,6 +193,19 @@ Item {
   // Blinking blocks: the events starting within five minutes.
   readonly property int imminentMs: 5 * 60000
   readonly property bool anyImminent: coming.some(function(ev) { return ev.start > nowMs && ev.start - nowMs <= imminentMs })
+  readonly property bool anyWarning: anyImminent && deploy === 0
+  // The tags share one clock, so that they keep their distances and cross.
+  readonly property var tagPhases: Model.sweepPhases(blocks, nowMs, imminentMs)
+  property real tagClock: 0
+  NumberAnimation {
+    target: root
+    property: "tagClock"
+    from: 0
+    to: 2
+    duration: 2200
+    loops: Animation.Infinite
+    running: root.anyWarning && root.animate
+  }
   property bool blinkOn: true
   Timer {
     interval: 500
@@ -297,7 +310,10 @@ Item {
             id: block
             required property var modelData
             required property int index
-            readonly property real laneWidth: (root.railWidth - 2) / modelData.lanes
+            readonly property real restWidth: Math.max(2, (root.railWidth - 2) / modelData.lanes - (modelData.lanes > 1 ? 1 : 0))
+            // While a warning shows, the lanes widen with it, so blocks side
+            // by side stay apart.
+            readonly property real laneWidth: (root.railWidth - 2 + (root.anyWarning ? 12 : 0)) / modelData.lanes
             readonly property bool live: modelData.event.start <= root.nowMs
             readonly property bool shown: root.hoveredIndex === index
 
@@ -307,7 +323,7 @@ Item {
             readonly property bool warning: imminent && root.deploy === 0
             z: shown ? 3 : warning ? 2 : 1
             // Hovered, the block reaches out towards its card.
-            width: Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) + (shown ? 6 : warning ? 12 : 0)
+            width: shown ? restWidth + 6 : warning ? Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) : restWidth
             height: Math.max(2, modelData.height - 1)
             radius: 2
             readonly property bool imminent: !live && modelData.event.start - root.nowMs <= root.imminentMs
@@ -336,15 +352,9 @@ Item {
               Rectangle {
                 id: tag
                 // Sweeps the height of the block, like an index on a scale.
-                property real sweep: 0
-                SequentialAnimation on sweep {
-                  running: block.warning && root.animate
-                  loops: Animation.Infinite
-                  NumberAnimation { to: 1; duration: 1100; easing.type: Easing.InOutSine }
-                  NumberAnimation { to: 0; duration: 1100; easing.type: Easing.InOutSine }
-                }
+                readonly property real sweep: (1 - Math.cos(Math.PI * (root.tagClock + (root.tagPhases[block.index] || 0)))) / 2
 
-                x: parent.width + 5
+                x: 28 - block.x   // one column for all the tags, past the frames
                 y: -1 + Math.max(0, parent.height - height + 2) * sweep
                 width: 28
                 height: 18

@@ -54,6 +54,21 @@ test("plainDescription: words only, no separators, no secrets", () => {
   assert.equal(M.plainDescription("<img src='https://x/y'>ok &unknown;"), "ok &unknown;")
 })
 
+test("warning tags start spread over the height", () => {
+  const now = day
+  const at = (mins) => ({ event: { start: now + mins * 60000 } })
+  const height = (phase) => (1 - Math.cos(Math.PI * phase)) / 2
+  const heights = (blocks) => M.sweepPhases(blocks, now, 5 * 60000).map(height)
+  const near = (got, want) => got.forEach((h, i) => assert.ok(Math.abs(h - want[i]) < 1e-9, `${i}: ${h}`))
+
+  near(heights([at(2)]), [0])
+  near(heights([at(2), at(2)]), [0, 1])
+  near(heights([at(2), at(3), at(4)]), [0, 1, 0.5])
+  near(heights([at(1), at(1), at(1), at(1)]), [0, 1, 1 / 3, 2 / 3])
+  // Only the imminent ones count; the others stay at the top.
+  near(heights([at(-1), at(2), at(60), at(3)]), [0, 0, 0, 1])
+})
+
 test("formats", () => {
   assert.equal(M.duration(45 * 60000), "45 min")
   assert.equal(M.duration(90 * 60000), "1 h 30")
