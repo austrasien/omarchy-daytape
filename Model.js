@@ -165,13 +165,26 @@ function nextWake(nowMs, events, imminentMs, lateMs) {
 
 function eventKey(ev) { return String(ev.title || "") + "|" + ev.start }
 
+function hasCall(ev) { return /^https?:\/\//i.test(String(ev.meetUrl || "")) }
+
+// The started events a call in progress counts as joining: a call opened
+// long before an event belongs to the previous one. callSince is 0 out of a
+// call.
+function joinedEvents(events, nowMs, callSince, imminentMs) {
+  if (!callSince) return []
+  return (events || []).filter(function (ev) {
+    return ev.start <= nowMs && callSince >= ev.start - imminentMs
+  })
+}
+
 // What an event is warning about: "imminent" in the last minutes before it,
-// "late" for a while after its start until it is joined, or "". An event
-// that started during a sleep (o.sleep: {from, to}) stays late for lateMs
-// after the wake. o: {imminentMs, lateMs, sleep, acked: {eventKey: true}}.
+// "late" for a while after its start until it is joined, or "". Only an
+// event with a call can be late. One that started during a sleep (o.sleep:
+// {from, to}) stays late for lateMs after the wake.
+// o: {imminentMs, lateMs, sleep, acked: {eventKey: true}}.
 function alertOf(ev, nowMs, o) {
   if (ev.start > nowMs) return ev.start - nowMs <= o.imminentMs ? "imminent" : ""
-  if (ev.end <= nowMs || (o.acked && o.acked[eventKey(ev)])) return ""
+  if (!hasCall(ev) || ev.end <= nowMs || (o.acked && o.acked[eventKey(ev)])) return ""
   var limit = ev.start + o.lateMs
   if (o.sleep && ev.start > o.sleep.from && ev.start <= o.sleep.to) limit = Math.max(limit, o.sleep.to + o.lateMs)
   return nowMs < limit ? "late" : ""
@@ -180,6 +193,14 @@ function alertOf(ev, nowMs, o) {
 // alertOf for each block, in order.
 function alertStates(blocks, nowMs, o) {
   return (blocks || []).map(function (b) { return alertOf(b.event, nowMs, o) })
+}
+
+// The card's header for a block: its rank among the events not over yet.
+function targetLabel(blocks, index, nowMs) {
+  var block = (blocks || [])[index]
+  if (!block || block.event.end <= nowMs) return "TGT --"
+  var ahead = blocks.filter(function (b) { return b.event.end > nowMs })
+  return "TGT " + pad(ahead.indexOf(block) + 1) + "/" + pad(ahead.length)
 }
 
 // The events that both started and ended during a sleep.
@@ -263,6 +284,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     normalizeConfig: normalizeConfig, midnight: midnight, eventsOfDay: eventsOfDay, span: span,
     hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription,
+    hasCall: hasCall, joinedEvents: joinedEvents, targetLabel: targetLabel,
     inCalendars: inCalendars, eventKey: eventKey, alertOf: alertOf, alertStates: alertStates, missedAsleep: missedAsleep,
     tagText: tagText, alertZone: alertZone, isStale: isStale
   }

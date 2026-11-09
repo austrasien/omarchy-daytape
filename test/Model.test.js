@@ -69,7 +69,34 @@ test("warning tags start spread over the height", () => {
 
 const MIN = 60000
 const alertOpts = { imminentMs: 5 * MIN, lateMs: 10 * MIN }
-const span = (start, end) => ({ title: "x", start: day + start * MIN, end: day + end * MIN })
+const span = (start, end) => ({ title: "x", meetUrl: "https://meet.example/x", start: day + start * MIN, end: day + end * MIN })
+
+test("alert: an event without a call warns before its start, not after", () => {
+  const ev = Object.assign(span(60, 120), { meetUrl: "" })
+  assert.equal(M.alertOf(ev, day + 58 * MIN, alertOpts), "imminent")
+  assert.equal(M.alertOf(ev, day + 62 * MIN, alertOpts), "")
+  const sleep = { from: day + 30 * MIN, to: day + 90 * MIN }
+  assert.equal(M.alertOf(ev, day + 90 * MIN, Object.assign({ sleep }, alertOpts)), "")
+})
+
+test("joinedEvents: a call opened long before an event belongs to the previous one", () => {
+  const ev = span(60, 120)
+  const joined = (since, mins) => M.joinedEvents([ev], day + mins * MIN, day * (since ? 1 : 0) + (since || 0) * MIN, 5 * MIN).length
+  assert.equal(joined(0, 62), 0)             // not in a call
+  assert.equal(joined(30, 62), 0)            // the previous call, still going
+  assert.equal(joined(55, 62), 1)            // opened in the five minutes before
+  assert.equal(joined(61, 62), 1)            // opened after the start
+  assert.equal(joined(58, 59), 0)            // not started yet
+})
+
+test("targetLabel ranks the events not over yet", () => {
+  const blocks = [{ event: span(10, 20) }, { event: span(30, 40) }, { event: span(50, 60) }]
+  const now = day + 35 * MIN
+  assert.equal(M.targetLabel(blocks, 0, now), "TGT --")
+  assert.equal(M.targetLabel(blocks, 1, now), "TGT 01/02")
+  assert.equal(M.targetLabel(blocks, 2, now), "TGT 02/02")
+  assert.equal(M.targetLabel(blocks, 9, now), "TGT --")
+})
 
 test("alert: imminent, then late until ten minutes after the start", () => {
   const ev = span(60, 120)

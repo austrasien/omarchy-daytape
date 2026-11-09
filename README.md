@@ -14,9 +14,10 @@ ones as empty outlines.
 - From five minutes before its start, a block **grows and blinks** in a target
   frame, with a tag sweeping up and down its height (`T-05`, then seconds in
   the last minute). Simultaneous events get a column and a tag each.
-- If you have not joined, the warning goes on for ten minutes after the start
-  (`T+03`). It ends when a call starts (an app captures the microphone or the
-  screen) or when you click the block or its tag. Clicking joins the call.
+- If an event has a call and you have not joined, the warning goes on for ten
+  minutes after the start (`T+03`). It ends when a call starts (an app captures
+  the microphone or the screen from five minutes before the event) or when you
+  click the block or its tag. Clicking joins the call.
 - During a warning the tape shows above fullscreen windows, and on the other
   screens too.
 - **After a sleep**, an event that started meanwhile and is still running warns

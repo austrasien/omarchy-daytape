@@ -73,10 +73,16 @@ Item {
     return false
   }
   property bool inCall: false
+  // When the current call started; 0 out of a call.
+  property real callSince: 0
   Timer {
     interval: root.capturing ? 3000 : 15000
     running: root.capturing !== root.inCall
-    onTriggered: { root.inCall = root.capturing; root.refresh() }
+    onTriggered: {
+      root.inCall = root.capturing
+      root.callSince = root.inCall ? Date.now() : 0
+      root.refresh()
+    }
   }
 
   readonly property bool open: tapeHover.hovered || pointerBlock >= 0 || cardHover.hovered || peeking
@@ -160,7 +166,7 @@ Item {
     if (day !== dayMs) dayMs = day
     var next = Model.eventsOfDay(published, nowMs, cfg.calendars)
     if (JSON.stringify(next) !== JSON.stringify(dayEvents)) dayEvents = next
-    if (inCall) acknowledge(dayEvents.filter(function (ev) { return ev.start <= nowMs }))
+    acknowledge(Model.joinedEvents(dayEvents, nowMs, callSince, imminentMs))
     wake.interval = Model.nextWake(nowMs, dayEvents, imminentMs, lateMs)
     wake.restart()
   }
@@ -295,7 +301,7 @@ Item {
   // Opens the event's call, through the widget's browser command when it
   // has one. The link comes from the feed: web links only, and as an
   // argument, never spliced into the command.
-  function hasCall(ev) { return /^https?:\/\//i.test(String(ev.meetUrl || "")) }
+  function hasCall(ev) { return Model.hasCall(ev) }
   function join(ev) {
     acknowledge([ev])
     if (!hasCall(ev)) return
@@ -816,7 +822,7 @@ Item {
     id: card
 
     property var ev: null        // kept through the closing animation
-    property int position: 0
+    property string target: ""
     property int lineY: 0
     property real t: 0
     property real spin: 0        // what is left of the reticle's turn, 1 to 0
@@ -893,7 +899,7 @@ Item {
         spinFrom = 70 + Math.random() * 220   // never near upright: always a turn to see
         spinMs = 600 + Math.random() * 1200   // 1.2 s, give or take half
         ev = block.event
-        position = root.hoveredIndex + 1
+        target = Model.targetLabel(root.blocks, root.hoveredIndex, root.nowMs)
         lineY = Math.round(block.y + block.height / 2)
         t = rescan ? 0.55 : 0
         reanchor()
@@ -994,7 +1000,7 @@ Item {
               height: tgt.implicitHeight
               HudText {
                 id: tgt
-                text: "◆ TGT " + Model.pad(card.position) + "/" + Model.pad(root.blocks.length)
+                text: "◆ " + card.target
                 font.bold: true
               }
               HudText {
