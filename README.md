@@ -68,6 +68,7 @@ omarchy plugin add https://github.com/austrasien/omarchy-daytape.git --enable
 | `hatched` | Feed labels drawn hatched instead of solid. |
 | `monitor` | Screen to stay on. Absent: the focused one. |
 | `railWidth` | Width at rest, in pixels. Absent: the gap beside windows. |
+| `verticalGap` | Gap above and below the windows, if a workspace rule makes it differ from `gaps_out`. |
 | `visible` | Show the tape. |
 
 ## Commands

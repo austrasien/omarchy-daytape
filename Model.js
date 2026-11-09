@@ -18,7 +18,9 @@ function normalizeConfig(raw) {
     dayStart: start, dayEnd: end, calendars: calendars, visible: raw.visible !== false,
     monitor: typeof raw.monitor === "string" ? raw.monitor : "",
     hatched: Array.isArray(raw.hatched) ? raw.hatched.map(String) : [],
-    railWidth: isFinite(rail) && rail >= 4 && rail <= 48 ? Math.floor(rail) : 0
+    railWidth: isFinite(rail) && rail >= 4 && rail <= 48 ? Math.floor(rail) : 0,
+    // -1 = automatic: the gap Hyprland leaves at the top and bottom.
+    verticalGap: raw.verticalGap !== undefined && isFinite(Number(raw.verticalGap)) ? Math.max(0, Math.floor(Number(raw.verticalGap))) : -1
   }
 }
 

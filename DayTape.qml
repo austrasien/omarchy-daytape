@@ -36,7 +36,7 @@ Item {
   // The widget stays out while the pointer is anywhere on it: tape or card.
   // The space Hyprland leaves beside windows: gaps_out (twice Style.gapsOut)
   // plus the 2 px border.
-  readonly property int edgeGap: Style.gapsOut * 2 + 2
+  readonly property int edgeGap: (cfg.verticalGap >= 0 ? cfg.verticalGap : Style.gapsOut * 2) + 2
   readonly property string barPosition: shell && shell.barConfig ? String(shell.barConfig.position || "top") : "top"
   function barSizeOn(name) { return shell && shell.bar && !shell.bar.barHidden ? shell.bar.barSizeFor(name) : 0 }
   readonly property int barSize: barSizeOn(targetScreen ? targetScreen.name : "")
