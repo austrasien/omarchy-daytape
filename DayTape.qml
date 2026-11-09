@@ -558,7 +558,7 @@ Item {
             width: Math.ceil(root.railWidth / 2)
             height: 2
             color: root.blockAt(modelData.y + 1) ? root.hudBlack
-              : modelData.y < root.nowY ? root.dim : root.bright
+              : modelData.y < root.nowY ? root.dim : root.hud
           }
         }
       }
