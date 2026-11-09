@@ -31,7 +31,8 @@ Item {
   // At rest only the rail shows, as wide as the gap beside the windows; the
   // hours slide out to stripWidth while the pointer is on it.
   readonly property int railWidth: cfg.railWidth || Math.max(8, Style.gapsOut * 2)   // stops short of the window border
-  readonly property int stripWidth: 56
+  // Just the hours: the blocks grow with the strip, under them.
+  readonly property int stripWidth: 40
   // The widget stays out while the pointer is anywhere on it: tape or card.
   // The space Hyprland leaves beside windows: gaps_out (twice Style.gapsOut)
   // plus the 2 px border.
@@ -115,6 +116,19 @@ Item {
   }
   NumberAnimation { id: deploying; target: root; property: "deploy"; to: 1; duration: root.dur(640) }
   NumberAnimation { id: retracting; target: root; property: "deploy"; to: 0; duration: root.dur(640) }
+
+  // How much wider than the rail the blocks and the day get, as the strip
+  // deploys: all of it, up to its 2 px edge.
+  readonly property real deployExtra: (stripWidth - railWidth - 2) * deploySeg(0, 0.35)
+
+  // Whether a filled block sits at that height of the tape.
+  function blockAt(y) {
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i]
+      if (y >= b.y && y < b.y + b.height && (b.event.end > nowMs || i === hoveredIndex)) return true
+    }
+    return false
+  }
 
   function deploySeg(a, b) {
     var p = Math.max(0, Math.min(1, (deploy - a) / (b - a)))
@@ -428,7 +442,7 @@ Item {
 
       Rectangle {
         id: backing
-        width: root.railWidth + (root.stripWidth - root.railWidth) * root.deploySeg(0, 0.35)
+        width: root.railWidth + root.deployExtra + 2 * root.deploySeg(0, 0.35)
         height: parent.height
         color: Color.background
 
@@ -457,7 +471,7 @@ Item {
             required property var modelData
             x: 0
             y: modelData.y
-            width: root.railWidth
+            width: root.railWidth + root.deployExtra
             height: Math.max(1, modelData.height - 1)
             color: Qt.tint(Color.background, Qt.alpha(Color.foreground, y + height < root.nowY ? 0.05 : 0.14))
 
@@ -478,10 +492,10 @@ Item {
             id: block
             required property var modelData
             required property int index
-            readonly property real restWidth: Math.max(2, (root.railWidth - 2) / modelData.lanes - (modelData.lanes > 1 ? 1 : 0))
+            readonly property real restWidth: Math.max(2, (root.railWidth - 2 + root.deployExtra) / modelData.lanes - (modelData.lanes > 1 ? 1 : 0))
             // While a warning shows, the lanes widen with it, so blocks side
             // by side stay apart.
-            readonly property real laneWidth: (root.railWidth - 2 + (root.anyWarning ? 12 : 0)) / modelData.lanes
+            readonly property real laneWidth: (root.railWidth - 2 + root.deployExtra + (root.anyWarning ? 12 : 0)) / modelData.lanes
             readonly property bool live: modelData.event.start <= root.nowMs
             readonly property bool over: modelData.event.end <= root.nowMs
             readonly property bool shown: root.hoveredIndex === index
@@ -492,8 +506,8 @@ Item {
             readonly property string alert: root.alerts[index] || ""
             readonly property bool warning: alert !== "" && root.deploy === 0
             z: shown ? 3 : warning ? 2 : 1
-            // Hovered, the block reaches out towards its card.
-            width: shown ? restWidth + 6 : warning ? Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) : restWidth
+            // Hovered at rest, the block reaches out towards its card.
+            width: shown && root.deploy === 0 ? restWidth + 6 : warning ? Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) : restWidth
             height: Math.max(2, modelData.height - 1)
             radius: 2
             // Finished events are empty outlines.
@@ -501,11 +515,15 @@ Item {
             border.width: shown || over ? 1 : 0
             border.color: shown ? Color.foreground : root.dim
 
-            Behavior on width { NumberAnimation { duration: root.dur(120); easing.type: Easing.OutCubic } }
+            // Not while the strip deploys: that moves it frame by frame.
+            Behavior on width {
+              enabled: root.deploy === 0 || root.deploy === 1
+              NumberAnimation { duration: root.dur(120); easing.type: Easing.OutCubic }
+            }
             Behavior on color { ColorAnimation { duration: root.dur(120) } }
 
             Hatch { visible: !block.over && Model.inCalendars(block.modelData.event, root.cfg.hatched) }
-            WornTape { visible: !block.over }
+            WornTape { visible: !block.over || block.shown }
 
             AlertMarker {
               visible: block.warning
@@ -577,34 +595,36 @@ Item {
       WavePulse { direction: -1 }
       WavePulse { direction: 1 }
 
-      // Now: a bright line across the rail, with the time beside it.
+      // Now: a bright line across the strip, with the time on it.
       Rectangle {
         visible: root.nowOnTape
         z: 3
         y: root.nowY - 1
-        width: root.railWidth + 4 * root.deploySeg(0.7, 0.9)
+        width: root.railWidth + root.deployExtra
         height: 2
         color: root.nowColor
       }
-      HudText {
-        visible: root.nowOnTape
+      Rectangle {
+        visible: root.nowOnTape && root.deploy > 0
+        z: 3
         opacity: root.deploySeg(0.7, 1)
-        x: root.railWidth + (root.stripWidth - root.railWidth - width) / 2 - (1 - opacity) * 12
+        anchors.horizontalCenter: nowClock.horizontalCenter
+        y: root.nowY - height / 2
+        width: nowClock.width + 2
+        height: nowClock.height
+        color: root.hudBlack
+      }
+      HudText {
+        id: nowClock
+        visible: root.nowOnTape
+        z: 3
+        opacity: root.deploySeg(0.7, 1)
+        x: (root.stripWidth - 2 - width) / 2 - (1 - opacity) * 12
         y: root.nowY - height / 2
         text: Model.clock(root.nowMs, root.use12Hour)
+        color: root.nowColor
         font.pixelSize: 11
         font.bold: true
-      }
-
-      // From the hovered block to the edge, where its card starts.
-      Rectangle {
-        visible: card.t > 0
-        z: 3
-        x: root.railWidth + 9
-        y: card.lineY
-        width: (root.stripWidth - x) * card.seg(0, 0.18)
-        height: 1
-        color: root.bright
       }
     }
   }
@@ -707,9 +727,10 @@ Item {
     property bool last: false
     readonly property real p: root.wave(markY)
 
-    x: root.railWidth
+    x: 0
     y: markY
-    width: root.stripWidth - root.railWidth
+    width: root.stripWidth - 2
+    readonly property bool onBlock: root.deploy > 0 && root.blockAt(last ? markY - 9 : markY + 9)
 
     // No line at the very ends: the strip's edge joins the window's border
     // there, in an L.
@@ -717,13 +738,14 @@ Item {
       visible: mark.markY > 0 && !mark.last
       width: mark.width * mark.p
       height: 1
-      color: mark.p < 1 ? root.bright : root.dim
+      color: mark.onBlock ? root.hudBlack : mark.p < 1 ? root.bright : root.dim
     }
     HudText {
       x: (mark.width - width) / 2 - (1 - mark.p) * 12
       y: mark.last ? -height - 1 : 2
       text: root.hourText(mark.hour, mark.p)
-      color: mark.p < 1 ? root.bright : Qt.tint(Color.background, Qt.alpha(Color.foreground, 0.75))
+      color: mark.onBlock ? root.hudBlack : mark.p < 1 ? root.bright : Qt.tint(Color.background, Qt.alpha(Color.foreground, 0.75))
+      font.bold: mark.onBlock
       opacity: root.nowOnTape && Math.abs(mark.markY + 9 - root.nowY) <= 12 ? 0 : mark.p
       font.pixelSize: 11
     }
@@ -750,6 +772,7 @@ Item {
         GradientStop { position: 0; color: Qt.alpha(root.hud, pulse.direction > 0 ? 0 : 0.45) }
         GradientStop { position: 1; color: Qt.alpha(root.hud, pulse.direction > 0 ? 0.45 : 0) }
       }
+      WornTape {}
     }
   }
 
