@@ -303,9 +303,11 @@ Item {
 
             x: 1 + modelData.lane * laneWidth
             y: modelData.y
-            z: shown ? 2 : 1
+            // At rest and about to start, the block grows out of the rail.
+            readonly property bool warning: imminent && root.deploy === 0
+            z: shown ? 3 : warning ? 2 : 1
             // Hovered, the block reaches out towards its card.
-            width: Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) + (shown ? 6 : 0)
+            width: Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) + (shown ? 6 : warning ? 12 : 0)
             height: Math.max(2, modelData.height - 1)
             radius: 2
             readonly property bool imminent: !live && modelData.event.start - root.nowMs <= root.imminentMs
@@ -315,6 +317,62 @@ Item {
 
             Behavior on width { NumberAnimation { duration: root.dur(120); easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: root.dur(120) } }
+
+            // The warning marker: a target frame round the block and a tag
+            // counting down, like a master caution. Drawn past the rail, where
+            // the pointer goes through to the windows underneath.
+            Item {
+              visible: block.warning
+              anchors.fill: parent
+
+              Rectangle {
+                anchors { fill: parent; topMargin: -3; bottomMargin: -3; leftMargin: -1; rightMargin: -3 }
+                color: "transparent"
+                radius: 2
+                border.width: 1
+                border.color: root.blinkOn ? root.hud : root.nowColor
+              }
+
+              Rectangle {
+                id: tag
+                // Sweeps the height of the block, like an index on a scale.
+                property real sweep: 0
+                SequentialAnimation on sweep {
+                  running: block.warning && root.animate
+                  loops: Animation.Infinite
+                  NumberAnimation { to: 1; duration: 1100; easing.type: Easing.InOutSine }
+                  NumberAnimation { to: 0; duration: 1100; easing.type: Easing.InOutSine }
+                }
+
+                x: parent.width + 5
+                y: -1 + Math.max(0, parent.height - height + 2) * sweep
+                width: 28
+                height: 18
+                radius: 2
+                color: root.blinkOn ? root.nowColor : root.hudBlack
+                border.width: 1
+                border.color: root.hud
+
+                // Its pointer, towards the block.
+                Rectangle {
+                  x: -3
+                  y: parent.height / 2 - 3
+                  z: -1
+                  width: 6
+                  height: 6
+                  rotation: 45
+                  color: root.hud
+                }
+
+                HudText {
+                  anchors.centerIn: parent
+                  text: "T-" + Model.pad(Math.max(0, Math.ceil((block.modelData.event.start - root.nowMs) / 60000)))
+                  color: root.blinkOn ? Color.background : root.bright
+                  font.pixelSize: 10
+                  font.bold: true
+                }
+              }
+            }
 
             MouseArea {
               anchors.fill: parent

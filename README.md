@@ -10,12 +10,13 @@ scale, with the coming events as blocks from their start to their end.
 - **Click a block** to open its call (Teams, Meet or any web link).
 - **Click a line of the card** to copy it; it blinks to confirm. Meeting
   secrets are masked on the card; the `LINK` line copies the real link.
-- A block **blinks** from five minutes before its start.
+- From five minutes before its start, a block **grows and blinks** in a target
+  frame, with a `T-05` tag sweeping up and down its height.
 
 Colours follow the theme's accent. Animations stop with
 `omarchy toggle animations`, but keep running during a call: the optional
 call-mode plugin (`austraz.callmode`) holds animations off too, and the tape
-only animates during a hover.
+only animates during a hover or the five minutes before an event.
 
 ## Requirements
 
