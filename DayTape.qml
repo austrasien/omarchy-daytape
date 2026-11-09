@@ -536,6 +536,9 @@ Item {
     property int position: 0
     property int lineY: 0
     property real t: 0
+    property real spin: 0        // what is left of the reticle's turn, 1 to 0
+    property real spinFrom: 180  // the angle it starts from, drawn at each lock
+    property int spinMs: 1200    // how long it turns, drawn at each lock
 
     readonly property int pad: 24   // room around the panel for the brackets
     readonly property bool live: !!ev && ev.start <= root.nowMs
@@ -551,7 +554,7 @@ Item {
 
     readonly property string decodedTitle: {
       var s = ev ? String(ev.title || "") : ""
-      var p = seg(0.42, 0.82)
+      var p = seg(0.42, 0.74)
       if (p >= 1) return s
       var n = Math.floor(p * s.length)
       var out = s.slice(0, n)
@@ -601,25 +604,36 @@ Item {
       if (block) {
         closing.stop()
         opening.stop()
-        switching.stop()
-        // From one block to another, only a quick rescan.
-        var swap = ev !== null && t >= 0.5
+        // From one block to another, only a quick rescan of the content;
+        // the reticle always turns in full.
+        rescan = ev !== null && t >= 0.5
+        spinFrom = 70 + Math.random() * 220   // never near upright: always a turn to see
+        spinMs = 600 + Math.random() * 1200   // 1.2 s, give or take half
         ev = block.event
         position = root.hoveredIndex + 1
         lineY = Math.round(block.y + block.height / 2)
-        t = swap ? 0.55 : 0
+        t = rescan ? 0.55 : 0
         reanchor()
-        if (swap) switching.restart()
-        else opening.restart()
+        opening.restart()
       } else if (ev) {
         opening.stop()
-        switching.stop()
         closing.restart()
       }
     }
 
-    NumberAnimation { id: switching; target: card; property: "t"; to: 1; duration: root.dur(240) }
-    NumberAnimation { id: opening; target: card; property: "t"; to: 1; duration: root.dur(720) }
+    // The content paints at full speed, then the timeline holds just short
+    // of the lock until the reticle has finished its slow turn.
+    property bool rescan: false
+    readonly property int paintMs: rescan ? 100 : 533
+    ParallelAnimation {
+      id: opening
+      NumberAnimation { target: card; property: "spin"; from: 1; to: 0; duration: root.dur(card.spinMs) }
+      SequentialAnimation {
+        NumberAnimation { target: card; property: "t"; to: 0.74; duration: root.dur(card.paintMs) }
+        PauseAnimation { duration: root.dur(card.spinMs - card.paintMs) }
+        NumberAnimation { target: card; property: "t"; to: 1; duration: root.dur(187) }
+      }
+    }
     NumberAnimation { id: closing; target: card; property: "t"; to: 0; duration: root.dur(140) }
 
     visible: win.visible && ev !== null && (root.hovered !== null || t > 0)
@@ -767,7 +781,7 @@ Item {
 
             Item {
               anchors.fill: parent
-              rotation: (1 - card.seg(0.3, 0.75)) * 720
+              rotation: card.spin * card.spinFrom
 
               Rectangle {
                 anchors.fill: parent
@@ -791,7 +805,7 @@ Item {
               color: "transparent"
               border.width: 1
               border.color: root.hud
-              rotation: 45 - (1 - card.seg(0.3, 0.75)) * 540
+              rotation: 45 - card.spin * card.spinFrom * 0.75
             }
             Rectangle { anchors.centerIn: parent; width: 3; height: 3; color: root.bright }
           }
@@ -799,7 +813,7 @@ Item {
 
         // The scan line and its trail.
         Rectangle {
-          visible: card.t > 0.35 && card.t < 0.9
+          visible: card.t > 0.35 && card.t < 0.74
           y: painted.height - height
           width: panel.width
           height: 34
