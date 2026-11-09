@@ -195,6 +195,43 @@ function alertStates(blocks, nowMs, o) {
   return (blocks || []).map(function (b) { return alertOf(b.event, nowMs, o) })
 }
 
+function wordCount(text) { return (String(text || "").match(/\S+/g) || []).length }
+
+// Where each text of the card starts in the run of typed words, and how many
+// words there are in all.
+function typingPlan(texts) {
+  var items = [], total = 0
+  ;(texts || []).forEach(function (text) {
+    var count = wordCount(text)
+    items.push({ start: total, count: count })
+    total += count
+  })
+  return { items: items, total: total }
+}
+
+// The part of text out once `typed` words of the whole run are.
+function typedWords(text, plan, index, typed) {
+  var item = plan.items[index]
+  if (!item) return ""
+  var left = Math.floor(typed) - item.start
+  var words = /\S+/g
+  var end = 0
+  while (left-- > 0 && words.exec(text)) end = words.lastIndex
+  return text.slice(0, end)
+}
+
+// The text the cursor is on: the one being typed, or the last when done.
+function cursorItem(plan, typed) {
+  var last = -1
+  for (var i = 0; i < plan.items.length; i++) {
+    var item = plan.items[i]
+    if (!item.count) continue
+    last = i
+    if (Math.floor(typed) < item.start + item.count) return i
+  }
+  return last
+}
+
 // The card's header for a block: its rank among the events not over yet.
 function targetLabel(blocks, index, nowMs) {
   var block = (blocks || [])[index]
@@ -285,6 +322,7 @@ if (typeof module !== "undefined") {
     normalizeConfig: normalizeConfig, midnight: midnight, eventsOfDay: eventsOfDay, span: span,
     hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription,
     hasCall: hasCall, joinedEvents: joinedEvents, targetLabel: targetLabel,
+    typingPlan: typingPlan, typedWords: typedWords, cursorItem: cursorItem,
     inCalendars: inCalendars, eventKey: eventKey, alertOf: alertOf, alertStates: alertStates, missedAsleep: missedAsleep,
     tagText: tagText, alertZone: alertZone, isStale: isStale
   }

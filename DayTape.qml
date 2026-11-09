@@ -779,11 +779,33 @@ Item {
     }
   }
 
+  // Text the card types out word by word. It keeps the size of the whole
+  // text from the start, so the card does not grow as the words come.
+  component TypedText: HudText {
+    id: typedText
+    property int order: 0
+    property color shownColor: root.bright
+    color: "transparent"
+    wrapMode: Text.Wrap
+    elide: Text.ElideRight
+
+    HudText {
+      width: parent.width
+      text: card.typedText(typedText.order)
+      color: typedText.shownColor
+      font: typedText.font
+      wrapMode: typedText.wrapMode
+      elide: typedText.elide
+      maximumLineCount: typedText.maximumLineCount
+    }
+  }
+
   // A label on the left, its reading on the right. Hidden when empty.
   component DataRow: Row {
     id: dataRow
     property string key: ""
-    property string value: ""
+    property int order: 0
+    readonly property string value: card.typeTexts[order] || ""
     property string copyText: value   // what a click puts in the clipboard
     property int lines: 2
     visible: value !== ""
@@ -797,12 +819,11 @@ Item {
       color: root.dim
       font.bold: true
     }
-    HudText {
+    TypedText {
       width: dataRow.width - 52
       text: dataRow.value
-      color: card.flashKey === dataRow.key && !card.flashOn ? root.nowColor : root.bright
-      wrapMode: Text.Wrap
-      elide: Text.ElideRight
+      order: dataRow.order
+      shownColor: card.flashKey === dataRow.key && !card.flashOn ? root.nowColor : root.bright
       maximumLineCount: dataRow.lines
     }
   }
@@ -812,7 +833,8 @@ Item {
   // Opens like a target lock, on one timeline `t` from 0 to 1: the leader
   // shoots out of the block, the panel wipes open from it, the corner
   // brackets close in and blink, a scan line paints the content while the
-  // title decodes, and a flash marks the lock. Closing runs it back, fast.
+  // text types out word by word behind a block cursor, on a worn VHS picture,
+  // and a flash marks the lock. Closing runs it back, fast.
 
   PopupWindow {
     id: card
@@ -829,23 +851,45 @@ Item {
     readonly property bool live: !!ev && ev.start <= root.nowMs
     readonly property bool locked: t >= 0.75
     readonly property string details: ev ? Model.plainDescription(ev.description) : ""
-    readonly property string glyphs: "01X#/\\<>+=*ABCDEF"
+
+    // What the card types, in order: title, time, duration, calendar, link,
+    // place, brief.
+    readonly property var typeTexts: ev ? [
+      String(ev.title || ""),
+      Model.clock(ev.start, root.use12Hour) + " – " + Model.clock(ev.end, root.use12Hour),
+      Model.duration(ev.end - ev.start).toUpperCase(),
+      String(ev.label || "").toUpperCase(),
+      ev.meetUrl ? "VISIO" : "",
+      ev.location || "",
+      details
+    ] : []
+    readonly property var typing: Model.typingPlan(typeTexts)
+    // How many words are out, across all the texts.
+    property real typed: 0
+    readonly property bool typingDone: typed >= typing.total
+    // A word every 45 ms, within 1.6 s however long the brief is.
+    readonly property int typingMs: Math.min(1600, typing.total * 45)
+    // The cursor sits still while typing, and blinks once done.
+    property bool cursorOn: true
+    Timer {
+      interval: 450
+      repeat: true
+      running: card.visible && card.typingDone && card.t > 0
+      onRunningChanged: card.cursorOn = true
+      onTriggered: card.cursorOn = !card.cursorOn
+    }
+    function typedText(order) {
+      var text = Model.typedWords(typeTexts[order] || "", typing, order, typed)
+      if (order !== Model.cursorItem(typing, typed)) return text
+      return text + (cursorOn ? " █" : "")
+    }
+    // The picture wobbles as the words come, then settles.
+    readonly property int jitter: typingDone ? 0 : [0, 1, -1, 0, 2, -1, 1, -2][Math.floor(typed) % 8]
 
     // Progress of the part of the timeline from a to b, eased.
     function seg(a, b) {
       var p = Math.max(0, Math.min(1, (t - a) / (b - a)))
       return 1 - Math.pow(1 - p, 3)
-    }
-
-    readonly property string decodedTitle: {
-      var s = ev ? String(ev.title || "") : ""
-      var p = seg(0.42, 0.74)
-      if (p >= 1) return s
-      var n = Math.floor(p * s.length)
-      var out = s.slice(0, n)
-      for (var i = n; i < s.length; i++)
-        out += s.charAt(i) === " " ? " " : glyphs.charAt(Math.floor(Math.random() * glyphs.length))
-      return out
     }
 
     readonly property real spread: (1 - seg(0.3, 0.6)) * (pad - 2)
@@ -889,15 +933,13 @@ Item {
       if (block) {
         closing.stop()
         opening.stop()
-        // From one block to another, only a quick rescan of the content;
-        // the reticle always turns in full.
-        rescan = ev !== null && t >= 0.5
         spinFrom = 70 + Math.random() * 220   // never near upright: always a turn to see
         spinMs = 600 + Math.random() * 1200   // 1.2 s, give or take half
         ev = block.event
         target = Model.targetLabel(root.blocks, root.hoveredIndex, root.nowMs)
         lineY = Math.round(block.y + block.height / 2)
-        t = rescan ? 0.55 : 0
+        t = 0
+        typed = 0
         reanchor()
         opening.restart()
       } else if (ev) {
@@ -908,11 +950,14 @@ Item {
 
     // The content paints at full speed, then the timeline holds just short
     // of the lock until the reticle has finished its slow turn.
-    property bool rescan: false
-    readonly property int paintMs: rescan ? 100 : 533
+    readonly property int paintMs: 533
     ParallelAnimation {
       id: opening
       NumberAnimation { target: card; property: "spin"; from: 1; to: 0; duration: root.dur(card.spinMs) }
+      SequentialAnimation {
+        PauseAnimation { duration: root.dur(250) }
+        NumberAnimation { target: card; property: "typed"; from: 0; to: card.typing.total; duration: root.dur(card.typingMs) }
+      }
       SequentialAnimation {
         NumberAnimation { target: card; property: "t"; to: 0.74; duration: root.dur(card.paintMs) }
         PauseAnimation { duration: root.dur(card.spinMs - card.paintMs) }
@@ -986,7 +1031,7 @@ Item {
 
           Column {
             id: body
-            x: 18
+            x: 18 + card.jitter
             y: 18
             width: panel.width - 36
             spacing: 7
@@ -1011,49 +1056,32 @@ Item {
 
             ScaleLine {}
 
-            HudText {
+            TypedText {
               width: parent.width - 54
-              text: card.decodedTitle
+              text: card.typeTexts[0] || ""
+              order: 0
               TapHandler { onTapped: card.copy("TITLE", card.ev ? card.ev.title : "") }
               HoverHandler { cursorShape: Qt.PointingHandCursor }
-              color: card.flashKey === "TITLE" && !card.flashOn ? root.nowColor : root.bright
+              shownColor: card.flashKey === "TITLE" && !card.flashOn ? root.nowColor : root.bright
               font.pixelSize: 15
               font.bold: true
               font.capitalization: Font.AllUppercase
-              wrapMode: Text.Wrap
-              elide: Text.ElideRight
               maximumLineCount: 3
             }
 
-            DataRow {
-              key: "TIME"
-              value: card.ev ? Model.clock(card.ev.start, root.use12Hour) + " – " + Model.clock(card.ev.end, root.use12Hour) : ""
-            }
-            DataRow {
-              key: "DUR"
-              value: card.ev ? Model.duration(card.ev.end - card.ev.start).toUpperCase() : ""
-            }
-            DataRow {
-              key: "CAL"
-              value: card.ev ? String(card.ev.label || "").toUpperCase() : ""
-            }
+            DataRow { key: "TIME"; order: 1 }
+            DataRow { key: "DUR"; order: 2 }
+            DataRow { key: "CAL"; order: 3 }
             DataRow {
               key: "LINK"
-              value: card.ev && card.ev.meetUrl ? "VISIO" : ""
-          copyText: card.ev ? card.ev.meetUrl || "" : ""
+              order: 4
+              copyText: card.ev ? card.ev.meetUrl || "" : ""
             }
-            DataRow {
-              key: "LOC"
-              value: card.ev ? card.ev.location || "" : ""
-            }
+            DataRow { key: "LOC"; order: 5 }
 
             ScaleLine { visible: card.details !== "" }
 
-            DataRow {
-              key: "BRIEF"
-              value: card.details
-              lines: 8
-            }
+            DataRow { key: "BRIEF"; order: 6; lines: 8 }
           }
 
           // The reticle spins down onto the target and stops at the lock.
@@ -1093,6 +1121,34 @@ Item {
               rotation: 45 - card.spin * card.spinFrom * 0.75
             }
             Rectangle { anchors.centerIn: parent; width: 3; height: 3; color: root.bright }
+          }
+        }
+
+        // Worn tape: dark lines across everything, text included.
+        Image {
+          width: panel.width
+          height: panel.height
+          fillMode: Image.Tile
+          verticalAlignment: Image.AlignTop
+          horizontalAlignment: Image.AlignLeft
+          source: "data:image/svg+xml," + encodeURIComponent(
+            "<svg xmlns='http://www.w3.org/2000/svg' width='3' height='3'><rect width='3' height='1' fill='"
+            + root.hudBlack + "' fill-opacity='0.6'/></svg>")
+        }
+
+        // VHS tracking bands rolling down while the words come.
+        Repeater {
+          model: 2
+          delegate: Rectangle {
+            required property int index
+            readonly property real roll: card.typing.total > 0 ? (card.typed / card.typing.total * 2 + index * 0.45) % 1 : 0
+            visible: !card.typingDone
+            y: roll * panel.height
+            width: panel.width
+            height: 16
+            color: Qt.alpha(root.bright, 0.1)
+
+            Rectangle { y: 7; width: parent.width; height: 2; color: Qt.alpha(root.nowColor, 0.35) }
           }
         }
 

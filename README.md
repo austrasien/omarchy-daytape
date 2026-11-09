@@ -6,7 +6,8 @@ ones as empty outlines.
 
 - **At rest** only a thin rail shows, as wide as the gap beside your windows.
 - **Hover** the rail and the hours deploy in a wave from the pointer.
-- **Hover a block** and a target-lock card opens with its details. It stays
+- **Hover a block** and a target-lock card types out its details word by word
+  on a worn VHS picture. It stays
   while the pointer is on the rail, the strip or the card.
 - **Click a block** to open its call (Teams, Meet or any web link).
 - **Click a line of the card** to copy it; it blinks to confirm. Meeting

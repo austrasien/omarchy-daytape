@@ -89,6 +89,32 @@ test("joinedEvents: a call opened long before an event belongs to the previous o
   assert.equal(joined(58, 59), 0)            // not started yet
 })
 
+test("the card types word by word, text after text", () => {
+  const texts = ["Point  projet", "", "15:00 – 16:00", "ok"]
+  const plan = M.typingPlan(texts)
+  assert.equal(plan.total, 6)
+  const typed = (i, n) => M.typedWords(texts[i], plan, i, n)
+  assert.equal(typed(0, 0), "")
+  assert.equal(typed(0, 1), "Point")
+  assert.equal(typed(0, 1.9), "Point")
+  assert.equal(typed(0, 2), "Point  projet")
+  assert.equal(typed(1, 6), "")
+  assert.equal(typed(2, 2), "")
+  assert.equal(typed(2, 3), "15:00")
+  assert.equal(typed(2, 5), "15:00 – 16:00")
+  assert.equal(typed(3, 6), "ok")
+  assert.equal(typed(9, 6), "")
+})
+
+test("the cursor follows the typing, skips empty texts and stays on the last", () => {
+  const plan = M.typingPlan(["a b", "", "c", ""])
+  assert.equal(M.cursorItem(plan, 0), 0)
+  assert.equal(M.cursorItem(plan, 1.5), 0)
+  assert.equal(M.cursorItem(plan, 2), 2)
+  assert.equal(M.cursorItem(plan, 3), 2)
+  assert.equal(M.cursorItem(M.typingPlan(["", ""]), 0), -1)
+})
+
 test("targetLabel ranks the events not over yet", () => {
   const blocks = [{ event: span(10, 20) }, { event: span(30, 40) }, { event: span(50, 60) }]
   const now = day + 35 * MIN
