@@ -276,8 +276,10 @@ Item {
   readonly property var alerts: Model.alertStates(blocks, nowMs, { imminentMs: imminentMs, lateMs: lateMs, sleep: lastSleep, acked: acked })
   readonly property bool anyAlert: alerts.some(function (a) { return a !== "" })
   readonly property bool anyWarning: anyAlert && deploy === 0
-  // At rest, the part of a warning past the rail takes clicks too.
-  readonly property var warningZone: Model.alertZone(blocks, anyWarning ? alerts : [], railWidth, stripWidth)
+  // At rest, the enlarged block takes clicks past the rail too, up to its
+  // frame; the tag leaves them to the windows underneath.
+  readonly property int warningEdge: railWidth + 14
+  readonly property var warningZone: Model.alertZone(blocks, anyWarning ? alerts : [], railWidth, warningEdge)
   // The tags share one clock, so that they keep their distances and cross.
   readonly property var tagPhases: Model.sweepPhases(alerts)
   property real tagClock: 0
@@ -332,7 +334,7 @@ Item {
       required property var modelData
       // The same blocks and alerts as the tape, placed for this screen.
       readonly property var placed: Model.place(root.dayEvents, root.range, height, root.minBlockHeight)
-      readonly property var zone: Model.alertZone(placed, root.alerts, 0, root.stripWidth)
+      readonly property var zone: Model.alertZone(placed, root.alerts, 0, root.warningEdge)
 
       screen: modelData
       color: "transparent"
@@ -615,8 +617,8 @@ Item {
   }
 
   // The warning on a block: a target frame round it and a tag sweeping its
-  // height, like a master caution. A click past the rail joins the call,
-  // and the rest of the window underneath still gets the pointer.
+  // height, like a master caution. A click on the block joins the call; the
+  // tag lets the pointer through to the window underneath.
   component AlertMarker: Item {
     id: marker
     property var event: null
@@ -672,12 +674,6 @@ Item {
         color: root.blinkOn ? Color.background : root.bright
         font.pixelSize: text.length > 4 ? 9 : 10
         font.bold: true
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        cursorShape: Qt.PointingHandCursor
-        onClicked: root.join(marker.event)
       }
     }
   }

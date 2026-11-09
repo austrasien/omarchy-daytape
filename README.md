@@ -17,7 +17,7 @@ ones as empty outlines.
 - If an event has a call and you have not joined, the warning goes on for ten
   minutes after the start (`T+03`). It ends when a call starts (an app captures
   the microphone or the screen from five minutes before the event) or when you
-  click the block or its tag. Clicking joins the call.
+  click the block. Clicking joins the call.
 - During a warning the tape shows above fullscreen windows, and on the other
   screens too.
 - **After a sleep**, an event that started meanwhile and is still running warns
