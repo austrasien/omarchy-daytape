@@ -395,14 +395,17 @@ Item {
     margins {
       // Reaching the window's top and bottom borders: deployed, the strip
       // covers them up to its edge, which then meets what is left of them.
-      top: root.barPosition === "top" ? root.barSize + 1 : root.edgeGap - 2
+      // At the top it starts a pixel higher, on the line the bar draws
+      // under itself: a fractional scale would otherwise leave a row of it.
+      top: root.barPosition === "top" ? root.barSize : root.edgeGap - 2
       bottom: root.barPosition === "bottom" ? root.barSize + 1 : root.edgeGap - 2
       left: root.barPosition === "left" ? root.barSize : 0
     }
 
     WlrLayershell.namespace: "austraz-daytape"
-    // Above fullscreen windows during a warning, not to be missed.
-    WlrLayershell.layer: root.anyAlert ? WlrLayer.Overlay : WlrLayer.Top
+    // Above fullscreen windows during a warning, not to be missed, and
+    // above the bar's line while deployed, so that line stops at its edge.
+    WlrLayershell.layer: root.anyAlert || root.deploy > 0 ? WlrLayer.Overlay : WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
@@ -435,8 +438,9 @@ Item {
           readonly property bool moving: root.deploy > 0 && root.deploy < 0.4
           visible: root.deploy > 0
           anchors.right: parent.right
+          y: 1
           width: 2
-          height: parent.height
+          height: parent.height - 1
           color: moving ? root.bright : root.hud
         }
       }
