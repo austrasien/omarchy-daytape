@@ -17,6 +17,7 @@ function normalizeConfig(raw) {
   return {
     dayStart: start, dayEnd: end, calendars: calendars, visible: raw.visible !== false,
     monitor: typeof raw.monitor === "string" ? raw.monitor : "",
+    hatched: Array.isArray(raw.hatched) ? raw.hatched.map(String) : [],
     railWidth: isFinite(rail) && rail >= 4 && rail <= 48 ? Math.floor(rail) : 0
   }
 }
@@ -33,14 +34,19 @@ function midnight(ms) {
   return d.getTime()
 }
 
+// Whether an event's calendar is in a list of labels, whatever the case.
+function inCalendars(ev, labels) {
+  var label = String(ev.label || "").toLowerCase()
+  return (labels || []).some(function (c) { return c.toLowerCase() === label })
+}
+
 // The timed events of today not over yet, soonest first. With a list of
-// calendars, only the events of those (by label, whatever the case).
+// calendars, only the events of those.
 function comingToday(events, nowMs, calendars) {
-  var wanted = (calendars || []).map(function (c) { return c.toLowerCase() })
   var dayEnd = hourOf(midnight(nowMs), 24)
   return (events || []).filter(function (ev) {
     if (!ev || ev.allDay || ev.end <= ev.start || ev.end <= nowMs || ev.start >= dayEnd) return false
-    return !wanted.length || wanted.indexOf(String(ev.label || "").toLowerCase()) !== -1
+    return !(calendars || []).length || inCalendars(ev, calendars)
   }).sort(function (a, b) {
     return a.start - b.start || a.end - b.end
   })
@@ -141,29 +147,85 @@ function countdown(ms) {
 }
 
 // Milliseconds to the next moment the tape changes: the next minute, or
-// sooner an event starting to blink, starting or ending.
-function nextWake(nowMs, events, imminentMs) {
+// sooner an event starting to blink, starting, ending or giving up on being
+// joined (lateMs after its start). In an event's last minute, every second.
+function nextWake(nowMs, events, imminentMs, lateMs) {
   var next = Math.floor(nowMs / 60000) * 60000 + 60000
   for (var i = 0; i < (events || []).length; i++) {
-    var marks = [events[i].start - imminentMs, events[i].start, events[i].end]
+    var start = events[i].start
+    var marks = [start - imminentMs, start, events[i].end]
+    if (lateMs) marks.push(start + lateMs)
+    if (start > nowMs && start - nowMs <= 60000) marks.push(Math.floor(nowMs / 1000) * 1000 + 1000)
     for (var j = 0; j < marks.length; j++)
       if (marks[j] > nowMs && marks[j] < next) next = marks[j]
   }
   return Math.max(250, next - nowMs + 20)
 }
 
+function eventKey(ev) { return String(ev.title || "") + "|" + ev.start }
+
+// What an event is warning about: "imminent" in the last minutes before it,
+// "late" for a while after its start until it is joined, or "". An event
+// that started during a sleep (o.sleep: {from, to}) stays late for lateMs
+// after the wake. o: {imminentMs, lateMs, sleep, acked: {eventKey: true}}.
+function alertOf(ev, nowMs, o) {
+  if (ev.start > nowMs) return ev.start - nowMs <= o.imminentMs ? "imminent" : ""
+  if (ev.end <= nowMs || (o.acked && o.acked[eventKey(ev)])) return ""
+  var limit = ev.start + o.lateMs
+  if (o.sleep && ev.start > o.sleep.from && ev.start <= o.sleep.to) limit = Math.max(limit, o.sleep.to + o.lateMs)
+  return nowMs < limit ? "late" : ""
+}
+
+// alertOf for each block, in order.
+function alertStates(blocks, nowMs, o) {
+  return (blocks || []).map(function (b) { return alertOf(b.event, nowMs, o) })
+}
+
+// The events that both started and ended during a sleep.
+function missedAsleep(events, sleep, calendars) {
+  return (events || []).filter(function (ev) {
+    if (!ev || ev.allDay || ev.end <= ev.start) return false
+    if (!(ev.start > sleep.from && ev.end <= sleep.to)) return false
+    return !(calendars || []).length || inCalendars(ev, calendars)
+  })
+}
+
+// What a warning tag reads: minutes, seconds in the last minute before the
+// start, and minutes since the start once late.
+function tagText(ev, alert, nowMs) {
+  if (alert === "late") return "T+" + pad(Math.min(99, Math.max(1, Math.ceil((nowMs - ev.start) / 60000))))
+  var left = Math.max(0, ev.start - nowMs)
+  return left <= 60000 ? "T-" + pad(Math.ceil(left / 1000)) + "s" : "T-" + pad(Math.ceil(left / 60000))
+}
+
+// The part of the screen past the rail that takes the pointer during a
+// warning: from the first alerting block to the last, in window coordinates.
+function alertZone(blocks, alerts, fromX, toX) {
+  var top = Infinity, bottom = -Infinity
+  for (var i = 0; i < (blocks || []).length; i++) {
+    if (!alerts[i]) continue
+    top = Math.min(top, blocks[i].y)
+    bottom = Math.max(bottom, blocks[i].y + blocks[i].height)
+  }
+  if (bottom < top) return { x: 0, y: 0, width: 0, height: 0 }
+  return { x: fromX, y: Math.max(0, top - 4), width: toX - fromX, height: bottom - top + 8 }
+}
+
+// Whether the calendars have not been fetched for too long, or ever.
+function isStale(lastUpdated, nowMs, refreshMinutes) {
+  if (!lastUpdated) return true
+  return nowMs - lastUpdated > Math.max(15, 3 * (refreshMinutes || 0)) * 60000
+}
+
 // Where each block's warning tag starts on its cosine sweep, by block index.
 // Among the imminent blocks, the first starts at the top of its block, the
 // second at the bottom, and the others evenly between the two.
-function sweepPhases(blocks, nowMs, imminentMs) {
-  var phases = (blocks || []).map(function () { return 0 })
-  var imminent = []
-  phases.forEach(function (_, i) {
-    var start = blocks[i].event.start
-    if (start > nowMs && start - nowMs <= imminentMs) imminent.push(i)
-  })
-  imminent.forEach(function (index, k) {
-    var height = k === 0 ? 0 : k === 1 ? 1 : (k - 1) / (imminent.length - 1)
+function sweepPhases(alerts) {
+  var phases = (alerts || []).map(function () { return 0 })
+  var alerting = []
+  phases.forEach(function (_, i) { if (alerts[i]) alerting.push(i) })
+  alerting.forEach(function (index, k) {
+    var height = k === 0 ? 0 : k === 1 ? 1 : (k - 1) / (alerting.length - 1)
     phases[index] = Math.acos(1 - 2 * height) / Math.PI
   })
   return phases
@@ -199,6 +261,8 @@ function plainDescription(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     normalizeConfig: normalizeConfig, midnight: midnight, comingToday: comingToday, span: span,
-    hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription
+    hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription,
+    inCalendars: inCalendars, eventKey: eventKey, alertOf: alertOf, alertStates: alertStates, missedAsleep: missedAsleep,
+    tagText: tagText, alertZone: alertZone, isStale: isStale
   }
 }

@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import Quickshell.Hyprland
+import Quickshell.Services.Pipewire
 import qs.Commons
 import "Model.js" as Model
 
@@ -15,8 +16,9 @@ import "Model.js" as Model
 // $XDG_RUNTIME_DIR/next-event-upcoming.json, so the feeds are fetched once.
 // Settings are in ~/.config/omarchy/daytape.json:
 //   { "dayStart": 6, "dayEnd": 24, "calendars": ["Work"], "visible": true,
-//     "monitor": "eDP-1", "railWidth": 12 }
-// An empty or missing "calendars" shows every calendar.
+//     "monitor": "eDP-1", "railWidth": 12, "hatched": ["Perso"] }
+// An empty or missing "calendars" shows every calendar; "hatched" lists the
+// calendars drawn hatched instead of solid.
 Item {
   id: root
 
@@ -35,8 +37,8 @@ Item {
   // plus the 2 px border.
   readonly property int edgeGap: Style.gapsOut * 2 + 2
   readonly property string barPosition: shell && shell.barConfig ? String(shell.barConfig.position || "top") : "top"
-  readonly property int barSize: shell && shell.bar && !shell.bar.barHidden
-    ? shell.bar.barSizeFor(targetScreen ? targetScreen.name : "") : 0
+  function barSizeOn(name) { return shell && shell.bar && !shell.bar.barHidden ? shell.bar.barSizeFor(name) : 0 }
+  readonly property int barSize: barSizeOn(targetScreen ? targetScreen.name : "")
 
   // Animations stop when the user turned them off, but not for call mode,
   // which also sets Style.reduceMotion: these only run during a hover.
@@ -58,6 +60,24 @@ Item {
   }
   readonly property bool animate: !Style.reduceMotion || callModeHolds
   function dur(ms) { return animate ? ms : 0 }
+
+  // In a call: an app captures the microphone or the screen. Dictation
+  // records through pw-record, which is not a call; a page probing the
+  // microphone is not one either, and a call reconnecting has not ended.
+  readonly property var pwNodes: Pipewire.nodes ? Pipewire.nodes.values : []
+  readonly property bool capturing: {
+    for (var i = 0; i < pwNodes.length; i++) {
+      var node = pwNodes[i]
+      if (node && node.isStream && node.isSink === false && node.name !== "pw-record") return true
+    }
+    return false
+  }
+  property bool inCall: false
+  Timer {
+    interval: root.capturing ? 3000 : 15000
+    running: root.capturing !== root.inCall
+    onTriggered: { root.inCall = root.capturing; root.refresh() }
+  }
 
   readonly property bool open: tapeHover.hovered || pointerBlock >= 0 || cardHover.hovered || peeking
 
@@ -121,6 +141,12 @@ Item {
   property bool fileSeen: false
   property bool use12Hour: false
   property string browserCommand: ""
+  property real lastUpdated: 0
+  property int refreshMinutes: 0
+  // The feed gets a moment to appear when the shell starts.
+  property bool starting: true
+  Timer { interval: 20000; running: true; onTriggered: root.starting = false }
+  readonly property bool noData: !starting && (!fileSeen || Model.isStale(lastUpdated, nowMs, refreshMinutes))
   property real nowMs: Date.now()
   property real dayMs: Model.midnight(Date.now())
 
@@ -134,8 +160,53 @@ Item {
     if (day !== dayMs) dayMs = day
     var next = Model.comingToday(published, nowMs, cfg.calendars)
     if (JSON.stringify(next) !== JSON.stringify(coming)) coming = next
-    wake.interval = Model.nextWake(nowMs, coming, imminentMs)
+    if (inCall) acknowledge(coming.filter(function (ev) { return ev.start <= nowMs }))
+    wake.interval = Model.nextWake(nowMs, coming, imminentMs, lateMs)
     wake.restart()
+  }
+
+  // Events the user has joined: no late warning for them.
+  property var acked: ({})
+  function acknowledge(events) {
+    var next = Object.assign({}, acked)
+    var changed = false
+    events.forEach(function (ev) {
+      var key = Model.eventKey(ev)
+      if (!next[key]) { next[key] = true; changed = true }
+    })
+    if (changed) acked = next
+  }
+
+  // A sleep shows as a gap between beats: timers stop during one, the clock
+  // does not. The last sleep is kept, for events that started during it.
+  property var lastSleep: null
+  property real lastBeat: Date.now()
+  property var notified: ({})
+  Timer {
+    interval: 5000
+    running: true
+    repeat: true
+    onTriggered: {
+      var t = Date.now()
+      if (t - root.lastBeat > 30000) root.woke(root.lastBeat, t)
+      root.lastBeat = t
+    }
+  }
+  function woke(from, to) {
+    lastSleep = { from: from, to: to }
+    tellMissed(Model.missedAsleep(published, lastSleep, cfg.calendars))
+    refresh()
+    eventsFile.reload()
+  }
+  // Events over before the wake have no block left to blink on.
+  function tellMissed(events) {
+    var fresh = events.filter(function (ev) { return !notified[Model.eventKey(ev)] })
+    if (!fresh.length) return
+    var next = Object.assign({}, notified)
+    fresh.forEach(function (ev) { next[Model.eventKey(ev)] = true })
+    notified = next
+    var lines = fresh.map(function (ev) { return Model.clock(ev.start, use12Hour) + "  " + String(ev.title || "") })
+    Quickshell.execDetached(["notify-send", "-a", "Day tape", "Missed while asleep", lines.join("\n")])
   }
 
   function take(raw) {
@@ -145,6 +216,8 @@ Item {
       fileSeen = true
       use12Hour = d.use12Hour === true
       browserCommand = String(d.browserCommand || "")
+      lastUpdated = Number(d.lastUpdated) || 0
+      refreshMinutes = Number(d.refreshMinutes) || 0
       refresh()
     } catch (e) {}
   }
@@ -190,12 +263,17 @@ Item {
   readonly property var hovered: hoveredIndex >= 0 && hoveredIndex < blocks.length ? blocks[hoveredIndex] : null
   onBlocksChanged: { hoveredIndex = -1; pointerBlock = -1 }
 
-  // Blinking blocks: the events starting within five minutes.
+  // Alerting blocks: from five minutes before an event until it is joined,
+  // ten minutes after its start at most.
   readonly property int imminentMs: 5 * 60000
-  readonly property bool anyImminent: coming.some(function(ev) { return ev.start > nowMs && ev.start - nowMs <= imminentMs })
-  readonly property bool anyWarning: anyImminent && deploy === 0
+  readonly property int lateMs: 10 * 60000
+  readonly property var alerts: Model.alertStates(blocks, nowMs, { imminentMs: imminentMs, lateMs: lateMs, sleep: lastSleep, acked: acked })
+  readonly property bool anyAlert: alerts.some(function (a) { return a !== "" })
+  readonly property bool anyWarning: anyAlert && deploy === 0
+  // At rest, the part of a warning past the rail takes clicks too.
+  readonly property var warningZone: Model.alertZone(blocks, anyWarning ? alerts : [], railWidth, stripWidth)
   // The tags share one clock, so that they keep their distances and cross.
-  readonly property var tagPhases: Model.sweepPhases(blocks, nowMs, imminentMs)
+  readonly property var tagPhases: Model.sweepPhases(alerts)
   property real tagClock: 0
   NumberAnimation {
     target: root
@@ -209,7 +287,7 @@ Item {
   property bool blinkOn: true
   Timer {
     interval: 500
-    running: root.anyImminent
+    running: root.anyAlert
     repeat: true
     onTriggered: root.blinkOn = !root.blinkOn
   }
@@ -219,6 +297,7 @@ Item {
   // argument, never spliced into the command.
   function hasCall(ev) { return /^https?:\/\//i.test(String(ev.meetUrl || "")) }
   function join(ev) {
+    acknowledge([ev])
     if (!hasCall(ev)) return
     var open = browserCommand !== "" ? browserCommand + ' "$1" || xdg-open "$1"' : 'xdg-open "$1"'
     Quickshell.execDetached(["sh", "-c", open, "sh", String(ev.meetUrl)])
@@ -230,6 +309,71 @@ Item {
     var want = cfg.monitor || (Hyprland.focusedMonitor ? Hyprland.focusedMonitor.name : "")
     for (var i = 0; i < screens.length; i++) if (screens[i].name === want) return screens[i]
     return screens.length ? screens[0] : null
+  }
+  // The screens the tape is not on: they show the warnings alone.
+  readonly property var otherScreens: {
+    var others = []
+    var screens = Quickshell.screens
+    for (var i = 0; i < screens.length; i++) if (screens[i] !== targetScreen) others.push(screens[i])
+    return others
+  }
+
+  Variants {
+    model: root.anyAlert && root.cfg.visible ? root.otherScreens : []
+
+    PanelWindow {
+      id: alertWin
+      required property var modelData
+      // The same blocks and alerts as the tape, placed for this screen.
+      readonly property var placed: Model.place(root.coming, root.range, height, root.minBlockHeight)
+      readonly property var zone: Model.alertZone(placed, root.alerts, 0, root.stripWidth)
+
+      screen: modelData
+      color: "transparent"
+      implicitWidth: root.stripWidth
+
+      anchors { top: true; bottom: true; left: true }
+      margins {
+        top: root.barPosition === "top" ? root.barSizeOn(modelData.name) + 6 : root.edgeGap
+        bottom: root.barPosition === "bottom" ? root.barSizeOn(modelData.name) + 6 : root.edgeGap
+        left: root.barPosition === "left" ? root.barSizeOn(modelData.name) : 0
+      }
+
+      WlrLayershell.namespace: "austraz-daytape-alert"
+      WlrLayershell.layer: WlrLayer.Overlay
+      WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+      exclusionMode: ExclusionMode.Ignore
+      exclusiveZone: 0
+      mask: Region { x: alertWin.zone.x; y: alertWin.zone.y; width: alertWin.zone.width; height: alertWin.zone.height }
+
+      Repeater {
+        model: alertWin.placed
+        delegate: Rectangle {
+          id: alertBlock
+          required property var modelData
+          required property int index
+          readonly property string alert: root.alerts[index] || ""
+          readonly property real laneWidth: (root.railWidth + 10) / modelData.lanes
+
+          visible: alert !== ""
+          x: 1 + modelData.lane * laneWidth
+          y: modelData.y
+          width: Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0))
+          height: Math.max(2, modelData.height - 1)
+          radius: 2
+          color: root.blinkOn ? root.nowColor : root.hud
+
+          Hatch { visible: Model.inCalendars(alertBlock.modelData.event, root.cfg.hatched) }
+          AlertMarker {
+            event: alertBlock.modelData.event
+            alert: alertBlock.alert
+            phase: root.tagPhases[alertBlock.index] || 0
+            railEdge: 0
+            blockX: alertBlock.x
+          }
+        }
+      }
+    }
   }
 
   PanelWindow {
@@ -247,18 +391,25 @@ Item {
     }
 
     WlrLayershell.namespace: "austraz-daytape"
-    WlrLayershell.layer: WlrLayer.Top
+    // Above fullscreen windows during a warning, not to be missed.
+    WlrLayershell.layer: root.anyAlert ? WlrLayer.Overlay : WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
     exclusiveZone: 0
 
-    // At rest only the rail takes the pointer. Deployed, the whole strip
-    // does, so the pointer can cross it to the card.
-    mask: Region { item: root.deployed ? tape : rail }
+    // At rest only the rail takes the pointer, with what a warning draws
+    // past it. Deployed, the whole strip does, so the pointer can cross it to
+    // the card.
+    mask: Region {
+      item: root.deployed ? tape : rail
+      Region { x: root.warningZone.x; y: root.warningZone.y; width: root.warningZone.width; height: root.warningZone.height }
+    }
 
     Item {
       id: tape
-      anchors.fill: parent
+      // As wide as the hover: past the rail, a warning does not deploy it.
+      width: root.deployed ? root.stripWidth : root.railWidth
+      height: parent.height
 
       HoverHandler { id: tapeHover }
 
@@ -320,72 +471,35 @@ Item {
             x: 1 + modelData.lane * laneWidth
             y: modelData.y
             // At rest and about to start, the block grows out of the rail.
-            readonly property bool warning: imminent && root.deploy === 0
+            readonly property string alert: root.alerts[index] || ""
+            readonly property bool warning: alert !== "" && root.deploy === 0
             z: shown ? 3 : warning ? 2 : 1
             // Hovered, the block reaches out towards its card.
             width: shown ? restWidth + 6 : warning ? Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) : restWidth
             height: Math.max(2, modelData.height - 1)
             radius: 2
-            readonly property bool imminent: !live && modelData.event.start - root.nowMs <= root.imminentMs
-            color: shown ? root.bright : live ? root.hud : imminent ? (root.blinkOn ? root.nowColor : root.hud) : root.dim
+            color: shown ? root.bright : alert !== "" ? (root.blinkOn ? root.nowColor : root.hud) : live ? root.hud : root.dim
             border.width: shown ? 1 : 0
             border.color: Color.foreground
 
             Behavior on width { NumberAnimation { duration: root.dur(120); easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: root.dur(120) } }
 
-            // The warning marker: a target frame round the block and a tag
-            // counting down, like a master caution. Drawn past the rail, where
-            // the pointer goes through to the windows underneath.
-            Item {
+            Hatch { visible: Model.inCalendars(block.modelData.event, root.cfg.hatched) }
+
+            AlertMarker {
               visible: block.warning
-              anchors.fill: parent
-
-              Rectangle {
-                anchors { fill: parent; topMargin: -3; bottomMargin: -3; leftMargin: -1; rightMargin: -3 }
-                color: "transparent"
-                radius: 2
-                border.width: 1
-                border.color: root.blinkOn ? root.hud : root.nowColor
-              }
-
-              Rectangle {
-                id: tag
-                // Sweeps the height of the block, like an index on a scale.
-                readonly property real sweep: (1 - Math.cos(Math.PI * (root.tagClock + (root.tagPhases[block.index] || 0)))) / 2
-
-                x: 28 - block.x   // one column for all the tags, past the frames
-                y: -1 + Math.max(0, parent.height - height + 2) * sweep
-                width: 28
-                height: 18
-                radius: 2
-                color: root.blinkOn ? root.nowColor : root.hudBlack
-                border.width: 1
-                border.color: root.hud
-
-                // Its pointer, towards the block.
-                Rectangle {
-                  x: -3
-                  y: parent.height / 2 - 3
-                  z: -1
-                  width: 6
-                  height: 6
-                  rotation: 45
-                  color: root.hud
-                }
-
-                HudText {
-                  anchors.centerIn: parent
-                  text: "T-" + Model.pad(Math.max(0, Math.ceil((block.modelData.event.start - root.nowMs) / 60000)))
-                  color: root.blinkOn ? Color.background : root.bright
-                  font.pixelSize: 10
-                  font.bold: true
-                }
-              }
+              event: block.modelData.event
+              alert: block.alert
+              phase: root.tagPhases[block.index] || 0
+              blockX: block.x
             }
 
+            // Hover opens the card from the rail only: the marker handles
+            // what a warning draws past it.
             MouseArea {
-              anchors.fill: parent
+              width: block.warning ? Math.max(0, root.railWidth - block.x) : parent.width
+              height: parent.height
               hoverEnabled: true
               cursorShape: root.hasCall(block.modelData.event) ? Qt.PointingHandCursor : Qt.ArrowCursor
               onClicked: root.join(block.modelData.event)
@@ -399,6 +513,28 @@ Item {
               }
             }
           }
+        }
+      }
+
+      // The calendars have not been fetched for too long.
+      Rectangle {
+        visible: root.noData && root.deploy === 0
+        x: root.railWidth + 2
+        y: 2
+        width: noDataText.implicitWidth + 8
+        height: 15
+        radius: 2
+        color: root.hudBlack
+        border.width: 1
+        border.color: root.hud
+
+        HudText {
+          id: noDataText
+          anchors.centerIn: parent
+          text: "NO DATA"
+          color: root.bright
+          font.pixelSize: 9
+          font.bold: true
         }
       }
 
@@ -459,6 +595,83 @@ Item {
     color: root.hud
     font.family: Style.fontFamily
     font.pixelSize: 12
+  }
+
+  // Diagonal stripes of the background over a block, whatever its colour.
+  component Hatch: Image {
+    anchors.fill: parent
+    fillMode: Image.Tile
+    source: "data:image/svg+xml," + encodeURIComponent(
+      "<svg xmlns='http://www.w3.org/2000/svg' width='6' height='6'><path d='M-1 1L1 -1M0 6L6 0M5 7L7 5' stroke='"
+      + Color.background + "' stroke-width='1.6'/></svg>")
+  }
+
+  // The warning on a block: a target frame round it and a tag sweeping its
+  // height, like a master caution. A click past the rail joins the call,
+  // and the rest of the window underneath still gets the pointer.
+  component AlertMarker: Item {
+    id: marker
+    property var event: null
+    property string alert: ""
+    property real phase: 0
+    property real blockX: 0
+    property int railEdge: root.railWidth
+    anchors.fill: parent
+
+    Rectangle {
+      anchors { fill: parent; topMargin: -3; bottomMargin: -3; leftMargin: -1; rightMargin: -3 }
+      color: "transparent"
+      radius: 2
+      border.width: 1
+      border.color: root.blinkOn ? root.hud : root.nowColor
+    }
+
+    MouseArea {
+      x: Math.max(0, marker.railEdge - marker.blockX)
+      width: Math.max(0, parent.width - x)
+      height: parent.height
+      cursorShape: Qt.PointingHandCursor
+      onClicked: root.join(marker.event)
+    }
+
+    Rectangle {
+      // Sweeps the height of the block, like an index on a scale.
+      readonly property real sweep: (1 - Math.cos(Math.PI * (root.tagClock + marker.phase))) / 2
+
+      x: 28 - marker.blockX   // one column for all the tags, past the frames
+      y: -1 + Math.max(0, parent.height - height + 2) * sweep
+      width: 28
+      height: 18
+      radius: 2
+      color: root.blinkOn ? root.nowColor : root.hudBlack
+      border.width: 1
+      border.color: root.hud
+
+      // Its pointer, towards the block.
+      Rectangle {
+        x: -3
+        y: parent.height / 2 - 3
+        z: -1
+        width: 6
+        height: 6
+        rotation: 45
+        color: root.hud
+      }
+
+      HudText {
+        anchors.centerIn: parent
+        text: marker.event ? Model.tagText(marker.event, marker.alert, root.nowMs) : ""
+        color: root.blinkOn ? Color.background : root.bright
+        font.pixelSize: text.length > 4 ? 9 : 10
+        font.bold: true
+      }
+
+      MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: root.join(marker.event)
+      }
+    }
   }
 
   // An hour on the deployed strip: its graduation, half-hour tick and label
@@ -935,9 +1148,14 @@ Item {
       root.hoveredIndex = index
       root.peeking = index >= 0
     }
+    // Act as if the machine had slept for the last <minutes>, for checking.
+    function slept(minutes: int): void {
+      var now = Date.now()
+      root.woke(now - minutes * 60000, now)
+    }
     // What the tape holds, for diagnosis.
     function state(): string {
-      return JSON.stringify({ first: root.range.first, last: root.range.last, blocks: root.blocks.length, hovered: root.hoveredIndex, deploy: root.deploy, animate: root.animate, rail: root.railWidth, wake: wake.interval })
+      return JSON.stringify({ first: root.range.first, last: root.range.last, blocks: root.blocks.length, hovered: root.hoveredIndex, deploy: root.deploy, animate: root.animate, rail: root.railWidth, wake: wake.interval, alerts: root.alerts, inCall: root.inCall, noData: root.noData })
     }
   }
 }

@@ -41,7 +41,7 @@ test("nextWake: the next minute, or sooner a blink, start or end", () => {
   const now = at(10) + 10000
   assert.equal(M.nextWake(now, [], five), 50020)
   assert.equal(M.nextWake(now, [{ start: now + 5000 + five, end: now + 3600000 }], five), 5020)
-  assert.equal(M.nextWake(now, [{ start: now + 7000, end: now + 3600000 }], five), 7020)
+  assert.equal(M.nextWake(now, [{ start: now + 7000, end: now + 3600000 }], five), 1020)   // the last minute ticks every second
   assert.equal(M.nextWake(now, [{ start: now - 60000, end: now + 9000 }], five), 9020)
 })
 
@@ -55,18 +55,105 @@ test("plainDescription: words only, no separators, no secrets", () => {
 })
 
 test("warning tags start spread over the height", () => {
-  const now = day
-  const at = (mins) => ({ event: { start: now + mins * 60000 } })
   const height = (phase) => (1 - Math.cos(Math.PI * phase)) / 2
-  const heights = (blocks) => M.sweepPhases(blocks, now, 5 * 60000).map(height)
+  const heights = (alerts) => M.sweepPhases(alerts).map(height)
   const near = (got, want) => got.forEach((h, i) => assert.ok(Math.abs(h - want[i]) < 1e-9, `${i}: ${h}`))
 
-  near(heights([at(2)]), [0])
-  near(heights([at(2), at(2)]), [0, 1])
-  near(heights([at(2), at(3), at(4)]), [0, 1, 0.5])
-  near(heights([at(1), at(1), at(1), at(1)]), [0, 1, 1 / 3, 2 / 3])
-  // Only the imminent ones count; the others stay at the top.
-  near(heights([at(-1), at(2), at(60), at(3)]), [0, 0, 0, 1])
+  near(heights(["imminent"]), [0])
+  near(heights(["imminent", "late"]), [0, 1])
+  near(heights(["imminent", "imminent", "imminent"]), [0, 1, 0.5])
+  near(heights(["late", "late", "late", "late"]), [0, 1, 1 / 3, 2 / 3])
+  // Only the alerting ones count; the others stay at the top.
+  near(heights(["", "imminent", "", "late"]), [0, 0, 0, 1])
+})
+
+const MIN = 60000
+const alertOpts = { imminentMs: 5 * MIN, lateMs: 10 * MIN }
+const span = (start, end) => ({ title: "x", start: day + start * MIN, end: day + end * MIN })
+
+test("alert: imminent, then late until ten minutes after the start", () => {
+  const ev = span(60, 120)
+  const state = (mins, o) => M.alertOf(ev, day + mins * MIN, Object.assign({}, alertOpts, o))
+  assert.equal(state(54), "")
+  assert.equal(state(55), "imminent")
+  assert.equal(state(59.9), "imminent")
+  assert.equal(state(60), "late")
+  assert.equal(state(69.9), "late")
+  assert.equal(state(70), "")
+})
+
+test("alert: joining ends the late warning, not the imminent one", () => {
+  const ev = span(60, 120)
+  const acked = { [M.eventKey(ev)]: true }
+  const o = Object.assign({ acked }, alertOpts)
+  assert.equal(M.alertOf(ev, day + 58 * MIN, o), "imminent")
+  assert.equal(M.alertOf(ev, day + 62 * MIN, o), "")
+})
+
+test("alert: an event started during a sleep is late for ten minutes after the wake", () => {
+  const ev = span(60, 120)
+  const sleep = { from: day + 30 * MIN, to: day + 90 * MIN }
+  const o = Object.assign({ sleep }, alertOpts)
+  assert.equal(M.alertOf(ev, day + 90 * MIN, o), "late")
+  assert.equal(M.alertOf(ev, day + 99.9 * MIN, o), "late")
+  assert.equal(M.alertOf(ev, day + 100 * MIN, o), "")
+  // Started before the sleep: the ordinary limit.
+  const before = span(20, 120)
+  assert.equal(M.alertOf(before, day + 90 * MIN, o), "")
+  // Over: nothing to join.
+  assert.equal(M.alertOf(span(40, 80), day + 90 * MIN, o), "")
+})
+
+test("missedAsleep: started and over during the sleep", () => {
+  const sleep = { from: day + 30 * MIN, to: day + 90 * MIN }
+  const work = Object.assign(span(40, 80), { label: "Work" })
+  const perso = Object.assign(span(40, 80), { label: "Perso" })
+  const ongoing = Object.assign(span(60, 120), { label: "Work" })
+  const earlier = Object.assign(span(10, 80), { label: "Work" })
+  assert.deepEqual(M.missedAsleep([work, ongoing, earlier], sleep, []), [work])
+  assert.deepEqual(M.missedAsleep([work, perso], sleep, ["perso"]), [perso])
+})
+
+test("tag text: minutes, last-minute seconds, then time since the start", () => {
+  const ev = span(60, 120)
+  const text = (mins, alert) => M.tagText(ev, alert, day + mins * MIN)
+  assert.equal(text(56, "imminent"), "T-04")
+  assert.equal(text(58.5, "imminent"), "T-02")
+  assert.equal(text(59, "imminent"), "T-60s")
+  assert.equal(text(59.5, "imminent"), "T-30s")
+  assert.equal(text(60.1, "late"), "T+01")
+  assert.equal(text(70, "late"), "T+10")
+  assert.equal(text(400, "late"), "T+99")
+})
+
+test("nextWake ticks every second in the last minute and marks the end of the late warning", () => {
+  const now = day + 10000
+  const soon = { start: now + 30500, end: now + 3600000 }
+  assert.equal(M.nextWake(now, [soon], 5 * MIN, 10 * MIN), 1020)
+  const late = { start: now - 10 * MIN + 4000, end: now + 3600000 }
+  assert.equal(M.nextWake(now, [late], 5 * MIN, 10 * MIN), 4020)
+})
+
+test("alert zone spans the alerting blocks only, past the rail", () => {
+  const blocks = [{ y: 10, height: 5 }, { y: 100, height: 40 }, { y: 200, height: 20 }]
+  assert.deepEqual(M.alertZone(blocks, ["", "late", "imminent"], 12, 56), { x: 12, y: 96, width: 44, height: 128 })
+  assert.deepEqual(M.alertZone(blocks, ["", "", ""], 12, 56), { x: 0, y: 0, width: 0, height: 0 })
+})
+
+test("stale when never fetched or fetched too long ago", () => {
+  const now = day + 600 * MIN
+  assert.equal(M.isStale(0, now, 5), true)
+  assert.equal(M.isStale(undefined, now, 5), true)
+  assert.equal(M.isStale(now - 14 * MIN, now, 5), false)
+  assert.equal(M.isStale(now - 16 * MIN, now, 5), true)
+  assert.equal(M.isStale(now - 50 * MIN, now, 20), false)
+})
+
+test("hatched calendars come from the settings", () => {
+  assert.deepEqual(M.normalizeConfig({ hatched: ["Perso"] }).hatched, ["Perso"])
+  assert.deepEqual(M.normalizeConfig({}).hatched, [])
+  assert.equal(M.inCalendars({ label: "perso" }, ["Perso"]), true)
+  assert.equal(M.inCalendars({ label: "Work" }, ["Perso"]), false)
 })
 
 test("formats", () => {
