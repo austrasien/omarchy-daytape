@@ -467,6 +467,8 @@ Item {
               height: 1
               color: Qt.tint(Color.background, Qt.alpha(Color.foreground, 0.4))
             }
+            // What is left of the day.
+            WornTape { visible: parent.y + parent.height >= root.nowY }
           }
         }
 
@@ -503,6 +505,7 @@ Item {
             Behavior on color { ColorAnimation { duration: root.dur(120) } }
 
             Hatch { visible: !block.over && Model.inCalendars(block.modelData.event, root.cfg.hatched) }
+            WornTape { visible: !block.over }
 
             AlertMarker {
               visible: block.warning
@@ -604,6 +607,17 @@ Item {
         color: root.bright
       }
     }
+  }
+
+  // Worn tape: dark lines across a filled shape, as over the cards' text.
+  component WornTape: Image {
+    anchors.fill: parent
+    fillMode: Image.Tile
+    verticalAlignment: Image.AlignTop
+    horizontalAlignment: Image.AlignLeft
+    source: "data:image/svg+xml," + encodeURIComponent(
+      "<svg xmlns='http://www.w3.org/2000/svg' width='3' height='3'><rect width='3' height='1' fill='"
+      + root.hudBlack + "' fill-opacity='0.6'/></svg>")
   }
 
   component HudText: Text {
