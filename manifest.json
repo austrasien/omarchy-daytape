@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "austraz.daytape",
   "name": "Day tape",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "austrasien",
   "license": "MIT",
   "description": "HUD-style tape on the left edge of the screen: the hours of the day to scale, with the coming events as green blocks",
