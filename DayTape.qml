@@ -461,9 +461,8 @@ Item {
             height: Math.max(1, modelData.height - 1)
             color: Qt.tint(Color.background, Qt.alpha(Color.foreground, y + height < root.nowY ? 0.05 : 0.14))
 
-            // The half hour.
+            // The hour.
             Rectangle {
-              y: parent.height / 2
               width: 4
               height: 1
               color: Qt.tint(Color.background, Qt.alpha(Color.foreground, 0.4))
@@ -562,7 +561,6 @@ Item {
         delegate: HourMark {
           required property var modelData
           markY: modelData.y
-          midY: modelData.height / 2
           hour: modelData.hour
         }
       }
@@ -686,12 +684,11 @@ Item {
     }
   }
 
-  // An hour on the deployed strip: its graduation, half-hour tick and label
+  // An hour on the deployed strip: its graduation and label
   // grow out of the rail as the wave reaches them.
   component HourMark: Item {
     id: mark
     property real markY: 0
-    property real midY: 0
     property int hour: 0
     property bool last: false
     readonly property real p: root.wave(markY)
@@ -707,13 +704,6 @@ Item {
       width: mark.width * mark.p
       height: 1
       color: mark.p < 1 ? root.bright : root.dim
-    }
-    Rectangle {
-      visible: mark.midY > 0
-      y: mark.midY
-      width: 7 * mark.p
-      height: 1
-      color: root.dim
     }
     HudText {
       x: (mark.width - width) / 2 - (1 - mark.p) * 12
