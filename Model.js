@@ -302,20 +302,25 @@ function decodeEntities(text) {
   })
 }
 
+// Meeting secrets out of a text shown on screen.
+function maskSecrets(text) {
+  return String(text || "")
+    .replace(/((?:code secret|code d['’]acc[eè]s|mot de passe|passcode|password)\s*:?\s*)\S+/gi, "$1••••••")
+    .replace(/(\bpin\b\s*:?\s*)\d[\d ]*#?/gi, "$1••••••")
+    .replace(/([?&](?:p|pwd|passcode|pin)=)[^\s&]+/gi, "$1••••••")
+}
+
 // A calendar description, for the card: words only (they often come as
 // HTML), no separator lines, and no meeting secrets on screen.
 function plainDescription(text) {
   var plain = decodeEntities(String(text || "")
     .replace(/<br\s*\/?>|<\/p>|<\/li>/gi, "\n")
     .replace(/<[^>]*>/g, ""))
-  return plain
+  return maskSecrets(plain
     .split("\n")
     .map(function (line) { return line.trim() })
     .filter(function (line) { return !/^[-_=~*.─━—–\s]*$/.test(line) })
-    .join("\n")
-    .replace(/((?:code secret|code d['’]acc[eè]s|mot de passe|passcode|password)\s*:?\s*)\S+/gi, "$1••••••")
-    .replace(/(\bpin\b\s*:?\s*)\d[\d ]*#?/gi, "$1••••••")
-    .replace(/([?&](?:p|pwd|passcode|pin)=)[^\s&]+/gi, "$1••••••")
+    .join("\n"))
 }
 
 if (typeof module !== "undefined") {
@@ -323,7 +328,7 @@ if (typeof module !== "undefined") {
     normalizeConfig: normalizeConfig, midnight: midnight, eventsOfDay: eventsOfDay, span: span,
     hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription,
     hasCall: hasCall, joinedEvents: joinedEvents, targetLabel: targetLabel,
-    typingPlan: typingPlan, typedWords: typedWords, cursorItem: cursorItem,
+    typingPlan: typingPlan, typedWords: typedWords, cursorItem: cursorItem, maskSecrets: maskSecrets,
     inCalendars: inCalendars, eventKey: eventKey, alertOf: alertOf, alertStates: alertStates, missedAsleep: missedAsleep,
     tagText: tagText, alertZone: alertZone, isStale: isStale
   }

@@ -11,7 +11,7 @@ ones as empty outlines.
   while the pointer is on the rail, the strip or the card.
 - **Click a block** to open its call (Teams, Meet or any web link).
 - **Click a line of the card** to copy it; it blinks to confirm. Meeting
-  secrets are masked on the card; the `LINK` line copies the real link.
+  secrets are masked on the card; the `LINK` and `LOC` lines copy the real text.
 - From five minutes before its start, a block **grows and blinks** in a target
   frame, with a tag sweeping up and down its height (`T-05`, then seconds in
   the last minute). Simultaneous events get a column and a tag each.

@@ -860,13 +860,15 @@ Item {
       Model.duration(ev.end - ev.start).toUpperCase(),
       String(ev.label || "").toUpperCase(),
       ev.meetUrl ? "VISIO" : "",
-      ev.location || "",
+      Model.maskSecrets(ev.location),
       details
     ] : []
     readonly property var typing: Model.typingPlan(typeTexts)
     // How many words are out, across all the texts.
     property real typed: 0
-    readonly property bool typingDone: typed >= typing.total
+    // Whole words: the texts change only when this does.
+    readonly property int typedCount: Math.floor(typed)
+    readonly property bool typingDone: typedCount >= typing.total
     // A word every 45 ms, within 1.6 s however long the brief is.
     readonly property int typingMs: Math.min(1600, typing.total * 45)
     // The cursor sits still while typing, and blinks once done.
@@ -879,8 +881,8 @@ Item {
       onTriggered: card.cursorOn = !card.cursorOn
     }
     function typedText(order) {
-      var text = Model.typedWords(typeTexts[order] || "", typing, order, typed)
-      if (order !== Model.cursorItem(typing, typed)) return text
+      var text = Model.typedWords(typeTexts[order] || "", typing, order, typedCount)
+      if (order !== Model.cursorItem(typing, typedCount)) return text
       return text + (cursorOn ? " █" : "")
     }
 
@@ -1075,7 +1077,11 @@ Item {
               order: 4
               copyText: card.ev ? card.ev.meetUrl || "" : ""
             }
-            DataRow { key: "LOC"; order: 5 }
+            DataRow {
+              key: "LOC"
+              order: 5
+              copyText: card.ev ? card.ev.location || "" : ""
+            }
 
             ScaleLine { visible: card.details !== "" }
 

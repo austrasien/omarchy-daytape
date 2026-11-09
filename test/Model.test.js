@@ -122,6 +122,12 @@ test("plainDescription masks phone PINs, not the word pin", () => {
   assert.equal(M.plainDescription("Pin the document"), "Pin the document")
 })
 
+test("maskSecrets works on a location too", () => {
+  assert.equal(M.maskSecrets("https://zoom.us/j/123?pwd=abc"), "https://zoom.us/j/123?pwd=••••••")
+  assert.equal(M.maskSecrets("Salle 4, Lausanne"), "Salle 4, Lausanne")
+  assert.equal(M.maskSecrets(undefined), "")
+})
+
 test("targetLabel ranks the events not over yet", () => {
   const blocks = [{ event: span(10, 20) }, { event: span(30, 40) }, { event: span(50, 60) }]
   const now = day + 35 * MIN
