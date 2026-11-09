@@ -393,8 +393,10 @@ Item {
 
     anchors { top: true; bottom: true; left: true }
     margins {
-      top: root.barPosition === "top" ? root.barSize + 6 : root.edgeGap
-      bottom: root.barPosition === "bottom" ? root.barSize + 6 : root.edgeGap
+      // Reaching the window's top and bottom borders: deployed, the strip
+      // covers them up to its edge, which then meets what is left of them.
+      top: root.barPosition === "top" ? root.barSize + 1 : root.edgeGap - 2
+      bottom: root.barPosition === "bottom" ? root.barSize + 1 : root.edgeGap - 2
       left: root.barPosition === "left" ? root.barSize : 0
     }
 
@@ -694,7 +696,10 @@ Item {
     y: markY
     width: root.stripWidth - root.railWidth
 
+    // No line at the very ends: the strip's edge joins the window's border
+    // there, in an L.
     Rectangle {
+      visible: mark.markY > 0 && !mark.last
       width: mark.width * mark.p
       height: 1
       color: mark.p < 1 ? root.bright : root.dim
