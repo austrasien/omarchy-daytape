@@ -475,12 +475,6 @@ Item {
             height: Math.max(1, modelData.height - 1)
             color: Qt.tint(Color.background, Qt.alpha(Color.foreground, y + height < root.nowY ? 0.05 : 0.14))
 
-            // The hour.
-            Rectangle {
-              width: 4
-              height: 1
-              color: Qt.tint(Color.background, Qt.alpha(Color.foreground, 0.4))
-            }
             // What is left of the day.
             WornTape { visible: parent.y + parent.height >= root.nowY }
           }
@@ -550,6 +544,21 @@ Item {
                 }
               }
             }
+          }
+        }
+
+        // The hours, over the events, until the strip's own marks take over.
+        Repeater {
+          model: root.cells
+          delegate: Rectangle {
+            required property var modelData
+            z: 4
+            visible: root.deploy === 0
+            y: modelData.y
+            width: Math.ceil(root.railWidth / 2)
+            height: 2
+            color: root.blockAt(modelData.y + 1) ? root.hudBlack
+              : modelData.y < root.nowY ? root.dim : root.bright
           }
         }
       }
