@@ -883,8 +883,6 @@ Item {
       if (order !== Model.cursorItem(typing, typed)) return text
       return text + (cursorOn ? " █" : "")
     }
-    // The picture wobbles as the words come, then settles.
-    readonly property int jitter: typingDone ? 0 : [0, 1, -1, 0, 2, -1, 1, -2][Math.floor(typed) % 8]
 
     // Progress of the part of the timeline from a to b, eased.
     function seg(a, b) {
@@ -1031,7 +1029,7 @@ Item {
 
           Column {
             id: body
-            x: 18 + card.jitter
+            x: 18
             y: 18
             width: panel.width - 36
             spacing: 7
@@ -1134,22 +1132,6 @@ Item {
           source: "data:image/svg+xml," + encodeURIComponent(
             "<svg xmlns='http://www.w3.org/2000/svg' width='3' height='3'><rect width='3' height='1' fill='"
             + root.hudBlack + "' fill-opacity='0.6'/></svg>")
-        }
-
-        // VHS tracking bands rolling down while the words come.
-        Repeater {
-          model: 2
-          delegate: Rectangle {
-            required property int index
-            readonly property real roll: card.typing.total > 0 ? (card.typed / card.typing.total * 2 + index * 0.45) % 1 : 0
-            visible: !card.typingDone
-            y: roll * panel.height
-            width: panel.width
-            height: 16
-            color: Qt.alpha(root.bright, 0.1)
-
-            Rectangle { y: 7; width: parent.width; height: 2; color: Qt.alpha(root.nowColor, 0.35) }
-          }
         }
 
         // The scan line and its trail.
