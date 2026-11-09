@@ -30,7 +30,7 @@ Item {
 
   // At rest only the rail shows, as wide as the gap beside the windows; the
   // hours slide out to stripWidth while the pointer is on it.
-  readonly property int railWidth: cfg.railWidth || Math.max(8, edgeGap)
+  readonly property int railWidth: cfg.railWidth || Math.max(8, Style.gapsOut * 2)   // stops short of the window border
   readonly property int stripWidth: 56
   // The widget stays out while the pointer is anywhere on it: tape or card.
   // The space Hyprland leaves beside windows: gaps_out (twice Style.gapsOut)
@@ -427,13 +427,15 @@ Item {
         height: parent.height
         color: Color.background
 
-        // Its edge, bright while it travels.
+        // Its edge while deployed, standing in for the window border it
+        // covers; bright while it travels. At rest the real border shows.
         Rectangle {
           readonly property bool moving: root.deploy > 0 && root.deploy < 0.4
+          visible: root.deploy > 0
           anchors.right: parent.right
-          width: moving ? 2 : 1
+          width: 2
           height: parent.height
-          color: moving ? root.bright : root.dim
+          color: moving ? root.bright : root.hud
         }
       }
 
