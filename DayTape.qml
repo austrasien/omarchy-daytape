@@ -8,8 +8,8 @@ import qs.Commons
 import "Model.js" as Model
 
 // A HUD tape along the left edge of the screen: the top is the start of the
-// day, the bottom its end, one cell per hour, to scale. The events still to
-// come today sit on it as green blocks, from their start to their end, and
+// day, the bottom its end, one cell per hour, to scale. The events of the
+// day sit on it as green blocks, from their start to their end, and
 // hovering one opens a targeting-style data card.
 //
 // The events come from the NextEvent bar widget, which publishes them in
@@ -152,16 +152,16 @@ Item {
 
   // Reassigned only when the list really changes: a new list rebuilds the
   // blocks, and a block rebuilt under the pointer would lose its hover.
-  property var coming: []
+  property var dayEvents: []
 
   function refresh() {
     nowMs = Date.now()
     var day = Model.midnight(nowMs)
     if (day !== dayMs) dayMs = day
-    var next = Model.comingToday(published, nowMs, cfg.calendars)
-    if (JSON.stringify(next) !== JSON.stringify(coming)) coming = next
-    if (inCall) acknowledge(coming.filter(function (ev) { return ev.start <= nowMs }))
-    wake.interval = Model.nextWake(nowMs, coming, imminentMs, lateMs)
+    var next = Model.eventsOfDay(published, nowMs, cfg.calendars)
+    if (JSON.stringify(next) !== JSON.stringify(dayEvents)) dayEvents = next
+    if (inCall) acknowledge(dayEvents.filter(function (ev) { return ev.start <= nowMs }))
+    wake.interval = Model.nextWake(nowMs, dayEvents, imminentMs, lateMs)
     wake.restart()
   }
 
@@ -248,11 +248,11 @@ Item {
   Timer { id: wake; onTriggered: root.refresh() }
   Component.onCompleted: refresh()
 
-  readonly property var range: Model.span(dayMs, cfg, coming)
+  readonly property var range: Model.span(dayMs, cfg, dayEvents)
   readonly property real nowY: (nowMs - range.first) / Math.max(1, range.last - range.first) * tape.height
   readonly property bool nowOnTape: nowMs >= range.first && nowMs <= range.last
   readonly property var cells: Model.hourCells(range, tape.height)
-  readonly property var blocks: Model.place(coming, range, tape.height, minBlockHeight)
+  readonly property var blocks: Model.place(dayEvents, range, tape.height, minBlockHeight)
 
   // The block under the pointer. Held by index: a modelData object read
   // back from QML is a new object each time, so it never compares equal.
@@ -325,7 +325,7 @@ Item {
       id: alertWin
       required property var modelData
       // The same blocks and alerts as the tape, placed for this screen.
-      readonly property var placed: Model.place(root.coming, root.range, height, root.minBlockHeight)
+      readonly property var placed: Model.place(root.dayEvents, root.range, height, root.minBlockHeight)
       readonly property var zone: Model.alertZone(placed, root.alerts, 0, root.stripWidth)
 
       screen: modelData
@@ -466,6 +466,7 @@ Item {
             // by side stay apart.
             readonly property real laneWidth: (root.railWidth - 2 + (root.anyWarning ? 12 : 0)) / modelData.lanes
             readonly property bool live: modelData.event.start <= root.nowMs
+            readonly property bool over: modelData.event.end <= root.nowMs
             readonly property bool shown: root.hoveredIndex === index
 
             x: 1 + modelData.lane * laneWidth
@@ -478,14 +479,15 @@ Item {
             width: shown ? restWidth + 6 : warning ? Math.max(2, laneWidth - (modelData.lanes > 1 ? 1 : 0)) : restWidth
             height: Math.max(2, modelData.height - 1)
             radius: 2
-            color: shown ? root.bright : alert !== "" ? (root.blinkOn ? root.nowColor : root.hud) : live ? root.hud : root.dim
-            border.width: shown ? 1 : 0
-            border.color: Color.foreground
+            // Finished events are empty outlines.
+            color: shown ? root.bright : alert !== "" ? (root.blinkOn ? root.nowColor : root.hud) : over ? "transparent" : live ? root.hud : root.dim
+            border.width: shown || over ? 1 : 0
+            border.color: shown ? Color.foreground : root.dim
 
             Behavior on width { NumberAnimation { duration: root.dur(120); easing.type: Easing.OutCubic } }
             Behavior on color { ColorAnimation { duration: root.dur(120) } }
 
-            Hatch { visible: Model.inCalendars(block.modelData.event, root.cfg.hatched) }
+            Hatch { visible: !block.over && Model.inCalendars(block.modelData.event, root.cfg.hatched) }
 
             AlertMarker {
               visible: block.warning
@@ -501,8 +503,8 @@ Item {
               width: block.warning ? Math.max(0, root.railWidth - block.x) : parent.width
               height: parent.height
               hoverEnabled: true
-              cursorShape: root.hasCall(block.modelData.event) ? Qt.PointingHandCursor : Qt.ArrowCursor
-              onClicked: root.join(block.modelData.event)
+              cursorShape: !block.over && root.hasCall(block.modelData.event) ? Qt.PointingHandCursor : Qt.ArrowCursor
+              onClicked: if (!block.over) root.join(block.modelData.event)
               onContainsMouseChanged: {
                 if (containsMouse) {
                   root.pointerBlock = block.index
@@ -998,7 +1000,7 @@ Item {
               HudText {
                 anchors.right: parent.right
                 text: !card.locked ? "ACQUIRING"
-                  : !card.ev ? "" : card.live ? "ACTIVE" : "T-" + Model.countdown(card.ev.start - root.nowMs)
+                  : !card.ev ? "" : card.ev.end <= root.nowMs ? "ENDED" : card.live ? "ACTIVE" : "T-" + Model.countdown(card.ev.start - root.nowMs)
                 color: root.bright
                 opacity: card.locked || Math.floor(card.t * 24) % 2 ? 1 : 0.3
                 font.bold: true

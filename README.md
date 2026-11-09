@@ -1,7 +1,8 @@
 # Day tape
 
 A HUD-style tape along the left edge of the Omarchy shell: today's hours to
-scale, with the coming events as blocks from their start to their end.
+scale, with the events as blocks from their start to their end, and finished
+ones as empty outlines.
 
 - **At rest** only a thin rail shows, as wide as the gap beside your windows.
 - **Hover** the rail and the hours deploy in a wave from the pointer.
@@ -31,7 +32,7 @@ only animates during a hover or a warning.
 
 ## Requirements
 
-- [omarchy-next-event](https://github.com/austrasien/omarchy-next-event) 1.9 or
+- [omarchy-next-event](https://github.com/austrasien/omarchy-next-event) 1.10 or
   later: the bar widget that fetches the calendars. The tape reads the `today` list it
   publishes in `$XDG_RUNTIME_DIR/next-event-upcoming.json`.
 - `wl-copy` (wl-clipboard), for copying, and `notify-send`, for missed events.

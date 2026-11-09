@@ -15,10 +15,10 @@ test("config: defaults, swapped hours, calendars and rail", () => {
   assert.equal(M.normalizeConfig({ railWidth: 999 }).railWidth, 0)
 })
 
-test("comingToday: drops past, tomorrow and all-day, filters calendars", () => {
-  const list = [ev(9, 10), ev(11, 12, { label: "Work" }), ev(26, 27), ev(0, 24, { allDay: true }), ev(13, 14, { label: "Perso" })]
-  assert.equal(M.comingToday(list, at(10.5)).length, 2)
-  assert.equal(M.comingToday(list, at(10.5), ["work"]).length, 1)
+test("eventsOfDay: keeps finished events, drops other days and all-day, filters calendars", () => {
+  const list = [ev(9, 10), ev(11, 12, { label: "Work" }), ev(26, 27), ev(-5, -1), ev(0, 24, { allDay: true }), ev(13, 14, { label: "Perso" })]
+  assert.equal(M.eventsOfDay(list, at(10.5)).length, 3)
+  assert.equal(M.eventsOfDay(list, at(10.5), ["work"]).length, 1)
 })
 
 test("span: widens to whole hours around events", () => {

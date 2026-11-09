@@ -40,12 +40,13 @@ function inCalendars(ev, labels) {
   return (labels || []).some(function (c) { return c.toLowerCase() === label })
 }
 
-// The timed events of today not over yet, soonest first. With a list of
-// calendars, only the events of those.
-function comingToday(events, nowMs, calendars) {
-  var dayEnd = hourOf(midnight(nowMs), 24)
+// The timed events of today, finished ones included, soonest first. With a
+// list of calendars, only the events of those.
+function eventsOfDay(events, nowMs, calendars) {
+  var dayStart = midnight(nowMs)
+  var dayEnd = hourOf(dayStart, 24)
   return (events || []).filter(function (ev) {
-    if (!ev || ev.allDay || ev.end <= ev.start || ev.end <= nowMs || ev.start >= dayEnd) return false
+    if (!ev || ev.allDay || ev.end <= ev.start || ev.end <= dayStart || ev.start >= dayEnd) return false
     return !(calendars || []).length || inCalendars(ev, calendars)
   }).sort(function (a, b) {
     return a.start - b.start || a.end - b.end
@@ -260,7 +261,7 @@ function plainDescription(text) {
 
 if (typeof module !== "undefined") {
   module.exports = {
-    normalizeConfig: normalizeConfig, midnight: midnight, comingToday: comingToday, span: span,
+    normalizeConfig: normalizeConfig, midnight: midnight, eventsOfDay: eventsOfDay, span: span,
     hourCells: hourCells, place: place, clock: clock, duration: duration, countdown: countdown, nextWake: nextWake, sweepPhases: sweepPhases, plainDescription: plainDescription,
     inCalendars: inCalendars, eventKey: eventKey, alertOf: alertOf, alertStates: alertStates, missedAsleep: missedAsleep,
     tagText: tagText, alertZone: alertZone, isStale: isStale
