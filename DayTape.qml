@@ -654,10 +654,10 @@ Item {
       // Sweeps the height of the block, like an index on a scale.
       readonly property real sweep: (1 - Math.cos(Math.PI * (root.tagClock + marker.phase))) / 2
 
-      x: 28 - marker.blockX   // one column for all the tags, past the frames
+      x: 24 - marker.blockX   // one column for all the tags, past the frames
       y: -1 + Math.max(0, parent.height - height + 2) * sweep
-      width: 28
-      height: 18
+      width: 32
+      height: 20
       radius: 2
       color: root.blinkOn ? root.nowColor : root.hudBlack
       border.width: 1
@@ -678,7 +678,7 @@ Item {
         anchors.centerIn: parent
         text: marker.event ? Model.tagText(marker.event, marker.alert, root.nowMs) : ""
         color: root.blinkOn ? Color.background : root.bright
-        font.pixelSize: text.length > 4 ? 9 : 10
+        font.pixelSize: text.length > 4 ? 10 : 12
         font.bold: true
       }
     }
