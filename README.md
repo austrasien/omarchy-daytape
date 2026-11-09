@@ -19,8 +19,8 @@ only animates during a hover.
 
 ## Requirements
 
-- [omarchy-next-event](https://github.com/austrasien/omarchy-next-event): the
-  bar widget that fetches the calendars. The tape reads the `today` list it
+- [omarchy-next-event](https://github.com/austrasien/omarchy-next-event) 1.8 or
+  later: the bar widget that fetches the calendars. The tape reads the `today` list it
   publishes in `$XDG_RUNTIME_DIR/next-event-upcoming.json`.
 - `wl-copy` (wl-clipboard), for copying.
 
