@@ -528,9 +528,12 @@ Item {
             }
 
             // Hover opens the card from the rail only: the marker handles
-            // what a warning draws past it.
+            // what a warning draws past it. In the first lane it reaches back
+            // to the screen edge, a pixel left of the block, so the pointer
+            // pushed against the edge still finds it.
             MouseArea {
-              width: block.warning ? Math.max(0, root.railWidth - block.x) : parent.width
+              x: block.modelData.lane === 0 ? -block.x : 0
+              width: (block.warning ? Math.max(0, root.railWidth - block.x) : parent.width) - x
               height: parent.height
               hoverEnabled: true
               cursorShape: !block.over && root.hasCall(block.modelData.event) ? Qt.PointingHandCursor : Qt.ArrowCursor
